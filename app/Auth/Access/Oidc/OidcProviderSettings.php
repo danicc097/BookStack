@@ -82,9 +82,9 @@ class OidcProviderSettings
             }
         }
 
-        if (strpos($this->issuer, 'https://') !== 0) {
-            throw new InvalidArgumentException('Issuer value must start with https://');
-        }
+        // if (strpos($this->issuer, 'https://') !== 0) {
+        //     throw new InvalidArgumentException('Issuer value must start with https://');
+        // }
     }
 
     /**
@@ -136,7 +136,7 @@ class OidcProviderSettings
             throw new OidcIssuerDiscoveryException("Error discovering provider settings from issuer at URL {$issuerUrl}");
         }
 
-        if ($result['issuer'] !== $this->issuer) {
+        if ($result['issuer'] !== $this->issuer && !str_contains($this->issuer, 'http://')) {
             throw new OidcIssuerDiscoveryException('Unexpected issuer value found on discovery response');
         }
 
