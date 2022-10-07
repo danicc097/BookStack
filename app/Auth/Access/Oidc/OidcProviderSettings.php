@@ -136,7 +136,8 @@ class OidcProviderSettings
             throw new OidcIssuerDiscoveryException("Error discovering provider settings from issuer at URL {$issuerUrl}");
         }
 
-        if ($result['issuer'] !== $this->issuer && !str_contains($this->issuer, 'http://')) {
+        // handle subpaths and local development
+        if (!str_contains($this->issuer, $result['issuer']) && !str_contains($this->issuer, 'http://')) {
             throw new OidcIssuerDiscoveryException('Unexpected issuer value found on discovery response');
         }
 

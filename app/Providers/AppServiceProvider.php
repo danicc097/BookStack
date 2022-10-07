@@ -28,72 +28,72 @@ use Whoops\Handler\HandlerInterface;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Bootstrap any application services.
-     *
-     * @return void
-     */
-    public function boot()
-    {
-        // Set root URL
-        $appUrl = config('app.url');
-        if ($appUrl) {
-            $isHttps = (strpos($appUrl, 'https://') === 0);
-            URL::forceRootUrl($appUrl);
-            URL::forceScheme($isHttps ? 'https' : 'http');
-        }
-
-        // Custom blade view directives
-        Blade::directive('icon', function ($expression) {
-            return "<?php echo icon($expression); ?>";
-        });
-
-        // Allow longer string lengths after upgrade to utf8mb4
-        Schema::defaultStringLength(191);
-
-        // Set morph-map for our relations to friendlier aliases
-        Relation::enforceMorphMap([
-            'bookshelf' => Bookshelf::class,
-            'book'      => Book::class,
-            'chapter'   => Chapter::class,
-            'page'      => Page::class,
-        ]);
-
-        // View Composers
-        View::composer('entities.breadcrumbs', BreadcrumbsViewComposer::class);
-
-        // Set paginator to use bootstrap-style pagination
-        Paginator::useBootstrap();
+  /**
+   * Bootstrap any application services.
+   *
+   * @return void
+   */
+  public function boot()
+  {
+    // Set root URL
+    $appUrl = config('app.url');
+    if ($appUrl) {
+      $isHttps = (strpos($appUrl, 'https://') === 0);
+      URL::forceRootUrl($appUrl);
+      URL::forceScheme($isHttps ? 'https' : 'http');
     }
 
-    /**
-     * Register any application services.
-     *
-     * @return void
-     */
-    public function register()
-    {
-        $this->app->bind(HandlerInterface::class, function ($app) {
-            return $app->make(WhoopsBookStackPrettyHandler::class);
-        });
+    // Custom blade view directives
+    Blade::directive('icon', function ($expression) {
+      return "<?php echo icon($expression); ?>";
+    });
 
-        $this->app->singleton(SettingService::class, function ($app) {
-            return new SettingService($app->make(Setting::class), $app->make(Repository::class));
-        });
+    // Allow longer string lengths after upgrade to utf8mb4
+    Schema::defaultStringLength(191);
 
-        $this->app->singleton(SocialAuthService::class, function ($app) {
-            return new SocialAuthService($app->make(SocialiteFactory::class), $app->make(LoginService::class));
-        });
+    // Set morph-map for our relations to friendlier aliases
+    Relation::enforceMorphMap([
+      'bookshelf' => Bookshelf::class,
+      'book'      => Book::class,
+      'chapter'   => Chapter::class,
+      'page'      => Page::class,
+    ]);
 
-        $this->app->singleton(CspService::class, function ($app) {
-            return new CspService();
-        });
+    // View Composers
+    View::composer('entities.breadcrumbs', BreadcrumbsViewComposer::class);
 
-        $this->app->bind(HttpClientInterface::class, function ($app) {
-            return new Client([
-                'timeout' => 6,
-                'verify' => false,
-            ]);
-        });
-    }
+    // Set paginator to use bootstrap-style pagination
+    Paginator::useBootstrap();
+  }
+
+  /**
+   * Register any application services.
+   *
+   * @return void
+   */
+  public function register()
+  {
+    $this->app->bind(HandlerInterface::class, function ($app) {
+      return $app->make(WhoopsBookStackPrettyHandler::class);
+    });
+
+    $this->app->singleton(SettingService::class, function ($app) {
+      return new SettingService($app->make(Setting::class), $app->make(Repository::class));
+    });
+
+    $this->app->singleton(SocialAuthService::class, function ($app) {
+      return new SocialAuthService($app->make(SocialiteFactory::class), $app->make(LoginService::class));
+    });
+
+    $this->app->singleton(CspService::class, function ($app) {
+      return new CspService();
+    });
+
+    $this->app->bind(HttpClientInterface::class, function ($app) {
+      return new Client([
+        'timeout' => 6,
+        'verify' => filter_var(env('VERIFY_REQUESTS', false), FILTER_VALIDATE_BOOLEAN),
+      ]);
+    });
+  }
 }
