@@ -50,6 +50,13 @@ class PageTest extends TestCase
         $resp->assertSeeText('Owned by ' . $owner->name);
     }
 
+    public function test_page_show_includes_pointer_section_select_mode_button()
+    {
+        $page = $this->entities->page();
+        $resp = $this->asEditor()->get($page->getUrl());
+        $this->withHtml($resp)->assertElementContains('.content-wrap button.screen-reader-only', 'Enter section select mode');
+    }
+
     public function test_page_creation_with_markdown_content()
     {
         $this->setSettings(['app-editor' => 'markdown']);
@@ -77,6 +84,32 @@ class PageTest extends TestCase
         $draft->refresh();
         $resp = $this->get($draft->getUrl('/edit'));
         $resp->assertSee('# a title');
+    }
+
+    public function test_page_creation_allows_summary_to_be_set()
+    {
+        $book = $this->entities->book();
+
+        $this->asEditor()->get($book->getUrl('/create-page'));
+        $draft = Page::query()->where('book_id', '=', $book->id)
+            ->where('draft', '=', true)->first();
+
+        $details = [
+            'html'    => '<h1>a title</h1>',
+            'name'    => 'My page with summary',
+            'summary' => 'Here is my changelog message for a new page!',
+        ];
+        $resp = $this->post($book->getUrl("/draft/{$draft->id}"), $details);
+        $resp->assertRedirect();
+
+        $this->assertDatabaseHas('page_revisions', [
+            'page_id' => $draft->id,
+            'summary' => 'Here is my changelog message for a new page!',
+        ]);
+
+        $draft->refresh();
+        $resp = $this->get($draft->getUrl('/revisions'));
+        $resp->assertSee('Here is my changelog message for a new page!');
     }
 
     public function test_page_delete()

@@ -1,19 +1,17 @@
 <?php
 
-use BookStack\Auth\Permissions\JointPermissionBuilder;
+use BookStack\Permissions\JointPermissionBuilder;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class RefactorJointPermissionsStorage extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         // Truncate before schema changes to avoid performance issues
         // since we'll need to rebuild anyway.
@@ -34,10 +32,8 @@ class RefactorJointPermissionsStorage extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         DB::table('joint_permissions')->truncate();
 
@@ -49,4 +45,4 @@ class RefactorJointPermissionsStorage extends Migration
             $table->unsignedInteger('owned_by')->index();
         });
     }
-}
+};

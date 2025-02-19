@@ -2,14 +2,15 @@
 
 namespace BookStack\Uploads;
 
-use BookStack\Auth\Permissions\JointPermission;
-use BookStack\Auth\Permissions\PermissionApplicator;
-use BookStack\Auth\User;
+use BookStack\App\Model;
 use BookStack\Entities\Models\Entity;
 use BookStack\Entities\Models\Page;
-use BookStack\Model;
-use BookStack\Traits\HasCreatorAndUpdater;
+use BookStack\Permissions\Models\JointPermission;
+use BookStack\Permissions\PermissionApplicator;
+use BookStack\Users\Models\HasCreatorAndUpdater;
+use BookStack\Users\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -29,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Attachment extends Model
 {
     use HasCreatorAndUpdater;
+    use HasFactory;
 
     protected $fillable = ['name', 'order'];
     protected $hidden = ['path', 'page'];
@@ -38,12 +40,10 @@ class Attachment extends Model
 
     /**
      * Get the downloadable file name for this upload.
-     *
-     * @return mixed|string
      */
-    public function getFileName()
+    public function getFileName(): string
     {
-        if (strpos($this->name, '.') !== false) {
+        if (str_contains($this->name, '.')) {
             return $this->name;
         }
 
@@ -69,7 +69,7 @@ class Attachment extends Model
      */
     public function getUrl($openInline = false): string
     {
-        if ($this->external && strpos($this->path, 'http') !== 0) {
+        if ($this->external && !str_starts_with($this->path, 'http')) {
             return $this->path;
         }
 
@@ -77,7 +77,22 @@ class Attachment extends Model
     }
 
     /**
-     * Generate a HTML link to this attachment.
+     * Get the representation of this attachment in a format suitable for the page editors.
+     * Detects and adapts video content to use an inline video embed.
+     */
+    public function editorContent(): array
+    {
+        $videoExtensions = ['mp4', 'webm', 'mkv', 'ogg', 'avi'];
+        if (in_array(strtolower($this->extension), $videoExtensions)) {
+            $html = '<video src="' . e($this->getUrl(true)) . '" controls width="480" height="270"></video>';
+            return ['text/html' => $html, 'text/plain' => $html];
+        }
+
+        return ['text/html' => $this->htmlLink(), 'text/plain' => $this->markdownLink()];
+    }
+
+    /**
+     * Generate the HTML link to this attachment.
      */
     public function htmlLink(): string
     {
@@ -85,7 +100,7 @@ class Attachment extends Model
     }
 
     /**
-     * Generate a markdown link to this attachment.
+     * Generate a MarkDown link to this attachment.
      */
     public function markdownLink(): string
     {

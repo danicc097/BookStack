@@ -2,9 +2,11 @@
 
 namespace Tests\Entity;
 
-use BookStack\Actions\Tag;
+use BookStack\Activity\Models\Tag;
 use BookStack\Entities\Models\Book;
 use BookStack\Entities\Models\Bookshelf;
+use BookStack\Entities\Models\Chapter;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class EntitySearchTest extends TestCase
@@ -117,6 +119,32 @@ class EntitySearchTest extends TestCase
         $exactSearchB->assertStatus(200)->assertDontSee($page->name);
     }
 
+    public function test_negated_searches()
+    {
+        $page = $this->entities->newPage(['name' => 'My new test negation page', 'html' => '<p>An angry tortoise wore trumpeted plimsoles</p>']);
+        $page->tags()->saveMany([new Tag(['name' => 'DonkCount', 'value' => '500'])]);
+        $page->created_by = $this->users->admin()->id;
+        $page->save();
+
+        $editor = $this->users->editor();
+        $this->actingAs($editor);
+
+        $exactSearch = $this->get('/search?term=' . urlencode('negation -"tortoise"'));
+        $exactSearch->assertStatus(200)->assertDontSeeText($page->name);
+
+        $tagSearchA = $this->get('/search?term=' . urlencode('negation [DonkCount=500]'));
+        $tagSearchA->assertStatus(200)->assertSeeText($page->name);
+        $tagSearchB = $this->get('/search?term=' . urlencode('negation -[DonkCount=500]'));
+        $tagSearchB->assertStatus(200)->assertDontSeeText($page->name);
+
+        $filterSearchA = $this->get('/search?term=' . urlencode('negation -{created_by:me}'));
+        $filterSearchA->assertStatus(200)->assertSeeText($page->name);
+        $page->created_by = $editor->id;
+        $page->save();
+        $filterSearchB = $this->get('/search?term=' . urlencode('negation -{created_by:me}'));
+        $filterSearchB->assertStatus(200)->assertDontSeeText($page->name);
+    }
+
     public function test_search_terms_with_delimiters_are_converted_to_exact_matches()
     {
         $this->asEditor();
@@ -225,6 +253,17 @@ class EntitySearchTest extends TestCase
         $chapterSearch->assertSee($chapter->book->getShortName(42));
     }
 
+    public function test_entity_selector_shows_breadcrumbs_on_default_view()
+    {
+        $page = $this->entities->pageWithinChapter();
+        $this->asEditor()->get($page->chapter->getUrl());
+
+        $resp = $this->asEditor()->get('/search/entity-selector?types=book,chapter&permission=page-create');
+        $html = $this->withHtml($resp);
+        $html->assertElementContains('.chapter.entity-list-item', $page->chapter->name);
+        $html->assertElementContains('.chapter.entity-list-item .entity-item-snippet', $page->book->getShortName(42));
+    }
+
     public function test_entity_selector_search_reflects_items_without_permission()
     {
         $page = $this->entities->page();
@@ -238,6 +277,39 @@ class EntitySearchTest extends TestCase
         $resp = $this->actingAs($this->users->viewer())->get($searchUrl);
         $this->withHtml($resp)->assertElementContains($baseSelector, $page->name);
         $this->withHtml($resp)->assertElementContains($baseSelector, "You don't have the required permissions to select this item");
+    }
+
+    public function test_entity_template_selector_search()
+    {
+        $templatePage = $this->entities->newPage(['name' => 'Template search test', 'html' => 'template test']);
+        $templatePage->template = true;
+        $templatePage->save();
+
+        $nonTemplatePage = $this->entities->newPage(['name' => 'Nontemplate page', 'html' => 'nontemplate', 'template' => false]);
+
+        // Visit both to make popular
+        $this->asEditor()->get($templatePage->getUrl());
+        $this->get($nonTemplatePage->getUrl());
+
+        $normalSearch = $this->get('/search/entity-selector-templates?term=test');
+        $normalSearch->assertSee($templatePage->name);
+        $normalSearch->assertDontSee($nonTemplatePage->name);
+
+        $normalSearch = $this->get('/search/entity-selector-templates?term=beans');
+        $normalSearch->assertDontSee($templatePage->name);
+        $normalSearch->assertDontSee($nonTemplatePage->name);
+
+        $defaultListTest = $this->get('/search/entity-selector-templates');
+        $defaultListTest->assertSee($templatePage->name);
+        $defaultListTest->assertDontSee($nonTemplatePage->name);
+
+        $this->permissions->disableEntityInheritedPermissions($templatePage);
+
+        $normalSearch = $this->get('/search/entity-selector-templates?term=test');
+        $normalSearch->assertDontSee($templatePage->name);
+
+        $defaultListTest = $this->get('/search/entity-selector-templates');
+        $defaultListTest->assertDontSee($templatePage->name);
     }
 
     public function test_sibling_search_for_pages()
@@ -258,7 +330,7 @@ class EntitySearchTest extends TestCase
     public function test_sibling_search_for_pages_without_chapter()
     {
         $page = $this->entities->pageNotWithinChapter();
-        $bookChildren = $page->book->getDirectChildren();
+        $bookChildren = $page->book->getDirectVisibleChildren();
         $this->assertGreaterThan(2, count($bookChildren), 'Ensure we\'re testing with at least 1 sibling');
 
         $search = $this->actingAs($this->users->viewer())->get("/search/entity/siblings?entity_id={$page->id}&entity_type=page");
@@ -273,7 +345,7 @@ class EntitySearchTest extends TestCase
     public function test_sibling_search_for_chapters()
     {
         $chapter = $this->entities->chapter();
-        $bookChildren = $chapter->book->getDirectChildren();
+        $bookChildren = $chapter->book->getDirectVisibleChildren();
         $this->assertGreaterThan(2, count($bookChildren), 'Ensure we\'re testing with at least 1 sibling');
 
         $search = $this->actingAs($this->users->viewer())->get("/search/entity/siblings?entity_id={$chapter->id}&entity_type=chapter");
@@ -309,6 +381,42 @@ class EntitySearchTest extends TestCase
         foreach ($shelves as $expectedShelf) {
             $search->assertSee($expectedShelf->name);
         }
+    }
+
+    public function test_sibling_search_for_books_provides_results_in_alphabetical_order()
+    {
+        $contextBook = $this->entities->book();
+        $searchBook = $this->entities->book();
+
+        $searchBook->name = 'Zebras';
+        $searchBook->save();
+
+        $search = $this->actingAs($this->users->viewer())->get("/search/entity/siblings?entity_id={$contextBook->id}&entity_type=book");
+        $this->withHtml($search)->assertElementNotContains('a:first-child', 'Zebras');
+
+        $searchBook->name = '1AAAAAAArdvarks';
+        $searchBook->save();
+
+        $search = $this->actingAs($this->users->viewer())->get("/search/entity/siblings?entity_id={$contextBook->id}&entity_type=book");
+        $this->withHtml($search)->assertElementContains('a:first-child', '1AAAAAAArdvarks');
+    }
+
+    public function test_sibling_search_for_shelves_provides_results_in_alphabetical_order()
+    {
+        $contextShelf = $this->entities->shelf();
+        $searchShelf = $this->entities->shelf();
+
+        $searchShelf->name = 'Zebras';
+        $searchShelf->save();
+
+        $search = $this->actingAs($this->users->viewer())->get("/search/entity/siblings?entity_id={$contextShelf->id}&entity_type=bookshelf");
+        $this->withHtml($search)->assertElementNotContains('a:first-child', 'Zebras');
+
+        $searchShelf->name = '1AAAAAAArdvarks';
+        $searchShelf->save();
+
+        $search = $this->actingAs($this->users->viewer())->get("/search/entity/siblings?entity_id={$contextShelf->id}&entity_type=bookshelf");
+        $this->withHtml($search)->assertElementContains('a:first-child', '1AAAAAAArdvarks');
     }
 
     public function test_search_works_on_updated_page_content()
@@ -368,6 +476,25 @@ class EntitySearchTest extends TestCase
         $this->assertEquals(2, $scoreByTerm->get('TermF'));
         // Is 1.5 but stored as integer, rounding up
         $this->assertEquals(2, $scoreByTerm->get('TermG'));
+    }
+
+    public function test_indexing_works_as_expected_for_page_with_lots_of_terms()
+    {
+        $this->markTestSkipped('Time consuming test');
+
+        $count = 100000;
+        $text = '';
+        $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_#';
+        for ($i = 0; $i < $count; $i++) {
+            $text .= substr(str_shuffle($chars), 0, 5) . ' ';
+        }
+
+        $page = $this->entities->newPage(['name' => 'Test page A', 'html' => '<p>' . $text . '</p>']);
+
+        $termCount = $page->searchTerms()->count();
+
+        // Expect at least 90% unique rate
+        $this->assertGreaterThan($count * 0.9, $termCount);
     }
 
     public function test_name_and_content_terms_are_merged_to_single_score()
@@ -444,11 +571,38 @@ class EntitySearchTest extends TestCase
         $search->assertSee($page->getUrl(), false);
     }
 
-    public function test_searches_with_user_filters_adds_them_into_advanced_search_form()
+    public function test_backslashes_can_be_searched_upon()
     {
-        $resp = $this->asEditor()->get('/search?term=' . urlencode('test {updated_by:dan} {created_by:dan}'));
-        $this->withHtml($resp)->assertElementExists('form input[name="filters[updated_by]"][value="dan"]');
-        $this->withHtml($resp)->assertElementExists('form input[name="filters[created_by]"][value="dan"]');
+        $page = $this->entities->newPage(['name' => 'TermA', 'html' => '
+            <p>More info is at the path \\\\cat\\dog\\badger</p>
+        ']);
+        $page->tags()->save(new Tag(['name' => '\\Category', 'value' => '\\animals\\fluffy']));
+
+        $search = $this->asEditor()->get('/search?term=' . urlencode('\\\\cat\\dog'));
+        $search->assertSee($page->getUrl(), false);
+
+        $search = $this->asEditor()->get('/search?term=' . urlencode('"\\dog\\\\"'));
+        $search->assertSee($page->getUrl(), false);
+
+        $search = $this->asEditor()->get('/search?term=' . urlencode('"\\badger\\\\"'));
+        $search->assertDontSee($page->getUrl(), false);
+
+        $search = $this->asEditor()->get('/search?term=' . urlencode('[\\Categorylike%\\fluffy]'));
+        $search->assertSee($page->getUrl(), false);
+    }
+
+    public function test_searches_with_terms_without_controls_includes_them_in_extras()
+    {
+        $resp = $this->asEditor()->get('/search?term=' . urlencode('test {updated_by:dan} {created_by:dan} -{viewed_by_me} -[a=b] -"dog" {is_template} {sort_by:last_commented}'));
+        $this->withHtml($resp)->assertFieldHasValue('extras', '{updated_by:dan} {created_by:dan} {is_template} {sort_by:last_commented} -"dog" -[a=b] -{viewed_by_me}');
+    }
+
+    public function test_negated_searches_dont_show_in_inputs()
+    {
+        $resp = $this->asEditor()->get('/search?term=' . urlencode('-{created_by:me} -[a=b] -"dog"'));
+        $this->withHtml($resp)->assertElementNotExists('input[name="tags[]"][value="a=b"]');
+        $this->withHtml($resp)->assertElementNotExists('input[name="exact[]"][value="dog"]');
+        $this->withHtml($resp)->assertElementNotExists('input[name="filters[created_by]"][value="me"][checked="checked"]');
     }
 
     public function test_searches_with_user_filters_using_me_adds_them_into_advanced_search_form()

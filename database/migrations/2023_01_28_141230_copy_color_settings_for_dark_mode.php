@@ -3,14 +3,12 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-class CopyColorSettingsForDarkMode extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         $colorSettings = [
             'app-color',
@@ -45,10 +43,8 @@ class CopyColorSettingsForDarkMode extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         $colorSettings = [
             'app-color-dark',
@@ -66,4 +62,4 @@ class CopyColorSettingsForDarkMode extends Migration
             ->whereIn('setting_key', $colorSettings)
             ->delete();
     }
-}
+};

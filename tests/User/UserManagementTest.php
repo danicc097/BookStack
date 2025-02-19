@@ -2,22 +2,19 @@
 
 namespace Tests\User;
 
-use BookStack\Actions\ActivityType;
-use BookStack\Auth\Access\UserInviteService;
-use BookStack\Auth\Role;
-use BookStack\Auth\User;
+use BookStack\Access\UserInviteException;
+use BookStack\Access\UserInviteService;
+use BookStack\Activity\ActivityType;
 use BookStack\Uploads\Image;
+use BookStack\Users\Models\Role;
+use BookStack\Users\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
-use RuntimeException;
 use Tests\TestCase;
-use Tests\Uploads\UsesImages;
 
 class UserManagementTest extends TestCase
 {
-    use UsesImages;
-
     public function test_user_creation()
     {
         /** @var User $user */
@@ -88,6 +85,16 @@ class UserManagementTest extends TestCase
         $this->assertTrue(Hash::check('newpassword', $userPassword));
     }
 
+    public function test_user_can_be_updated_with_single_char_name()
+    {
+        $user = $this->users->viewer();
+        $this->asAdmin()->put("/settings/users/{$user->id}", [
+            'name' => 'b'
+        ])->assertRedirect('/settings/users');
+
+        $this->assertEquals('b', $user->refresh()->name);
+    }
+
     public function test_user_cannot_be_deleted_if_last_admin()
     {
         $adminRole = Role::getRole('admin');
@@ -148,6 +155,7 @@ class UserManagementTest extends TestCase
 
         $resp = $this->asEditor()->get("settings/users/{$editor->id}/delete");
         $resp->assertSee('Migrate Ownership');
+        $this->withHtml($resp)->assertElementExists('form input[name="new_owner_id"]');
         $resp->assertSee('new_owner_id');
     }
 
@@ -162,6 +170,16 @@ class UserManagementTest extends TestCase
             'id'       => $page->id,
             'owned_by' => $newOwner->id,
         ]);
+    }
+
+    public function test_delete_with_empty_owner_migration_id_works()
+    {
+        $user = $this->users->editor();
+
+        $resp = $this->asAdmin()->delete("settings/users/{$user->id}", ['new_owner_id' => '']);
+        $resp->assertRedirect('/settings/users');
+        $this->assertActivityExists(ActivityType::USER_DELETE);
+        $this->assertSessionHas('success');
     }
 
     public function test_delete_removes_user_preferences()
@@ -183,15 +201,19 @@ class UserManagementTest extends TestCase
 
     public function test_guest_profile_shows_limited_form()
     {
-        $guest = User::getDefault();
+        $guest = $this->users->guest();
+
         $resp = $this->asAdmin()->get('/settings/users/' . $guest->id);
         $resp->assertSee('Guest');
-        $this->withHtml($resp)->assertElementNotExists('#password');
+        $html = $this->withHtml($resp);
+
+        $html->assertElementNotExists('#password');
+        $html->assertElementNotExists('[name="language"]');
     }
 
     public function test_guest_profile_cannot_be_deleted()
     {
-        $guestUser = User::getDefault();
+        $guestUser = $this->users->guest();
         $resp = $this->asAdmin()->get('/settings/users/' . $guestUser->id . '/delete');
         $resp->assertSee('Delete User');
         $resp->assertSee('Guest');
@@ -207,7 +229,7 @@ class UserManagementTest extends TestCase
     {
         $langs = ['en', 'fr', 'hr'];
         foreach ($langs as $lang) {
-            config()->set('app.locale', $lang);
+            config()->set('app.default_locale', $lang);
             $resp = $this->asAdmin()->get('/settings/users/create');
             $this->withHtml($resp)->assertElementExists('select[name="language"] option[value="' . $lang . '"][selected]');
         }
@@ -221,7 +243,7 @@ class UserManagementTest extends TestCase
 
         // Simulate an invitation sending failure
         $this->mock(UserInviteService::class, function (MockInterface $mock) {
-            $mock->shouldReceive('sendInvitation')->once()->andThrow(RuntimeException::class);
+            $mock->shouldReceive('sendInvitation')->once()->andThrow(UserInviteException::class);
         });
 
         $this->asAdmin()->post('/settings/users/create', [
@@ -239,20 +261,40 @@ class UserManagementTest extends TestCase
     {
         /** @var User $user */
         $user = User::factory()->make();
-        $adminRole = Role::getRole('admin');
 
         $this->mock(UserInviteService::class, function (MockInterface $mock) {
-            $mock->shouldReceive('sendInvitation')->once()->andThrow(RuntimeException::class);
+            $mock->shouldReceive('sendInvitation')->once()->andThrow(UserInviteException::class);
         });
 
         $this->asAdmin()->post('/settings/users/create', [
             'name'                          => $user->name,
             'email'                         => $user->email,
             'send_invite'                   => 'true',
-            'roles[' . $adminRole->id . ']' => 'true',
         ]);
 
         $this->assertDatabaseMissing('activities', ['type' => 'USER_CREATE']);
+    }
+
+    public function test_return_to_form_with_warning_if_the_invitation_sending_fails()
+    {
+        $logger = $this->withTestLogger();
+        /** @var User $user */
+        $user = User::factory()->make();
+
+        $this->mock(UserInviteService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('sendInvitation')->once()->andThrow(UserInviteException::class);
+        });
+
+        $resp = $this->asAdmin()->post('/settings/users/create', [
+            'name'                          => $user->name,
+            'email'                         => $user->email,
+            'send_invite'                   => 'true',
+        ]);
+
+        $resp->assertRedirect('/settings/users/create');
+        $this->assertSessionError('Could not create user since invite email failed to send');
+        $this->assertEquals($user->email, session()->getOldInput('email'));
+        $this->assertTrue($logger->hasErrorThatContains('Failed to send user invite with error:'));
     }
 
     public function test_user_create_update_fails_if_locale_is_invalid()
@@ -282,7 +324,7 @@ class UserManagementTest extends TestCase
     public function test_user_avatar_update_and_reset()
     {
         $user = $this->users->viewer();
-        $avatarFile = $this->getTestImage('avatar-icon.png');
+        $avatarFile = $this->files->uploadedImage('avatar-icon.png');
 
         $this->assertEquals(0, $user->image_id);
 

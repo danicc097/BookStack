@@ -6,14 +6,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class AddEditorChangeFieldAndPermission extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         // Add the new 'editor' column to the pages table
         Schema::table('pages', function (Blueprint $table) {
@@ -46,10 +44,8 @@ class AddEditorChangeFieldAndPermission extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         // Drop the new column from the pages table
         Schema::table('pages', function (Blueprint $table) {
@@ -59,4 +55,4 @@ class AddEditorChangeFieldAndPermission extends Migration
         // Remove traces of the role permission
         DB::table('role_permissions')->where('name', '=', 'editor-change')->delete();
     }
-}
+};

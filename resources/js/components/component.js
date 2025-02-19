@@ -8,20 +8,20 @@ export class Component {
 
     /**
      * The element that the component is registered upon.
-     * @type {Element}
+     * @type {HTMLElement}
      */
     $el = null;
 
     /**
      * Mapping of referenced elements within the component.
-     * @type {Object<string, Element>}
+     * @type {Object<string, HTMLElement>}
      */
     $refs = {};
 
     /**
      * Mapping of arrays of referenced elements within the component so multiple
      * references, sharing the same name, can be fetched.
-     * @type {Object<string, Element[]>}
+     * @type {Object<string, HTMLElement[]>}
      */
     $manyRefs = {};
 
@@ -51,8 +51,9 @@ export class Component {
         const componentName = this.$name;
         const event = new CustomEvent(`${componentName}-${eventName}`, {
             bubbles: true,
-            detail: data
+            detail: data,
         });
         this.$el.dispatchEvent(event);
     }
+
 }

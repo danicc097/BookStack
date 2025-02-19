@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-
 /**
  * Much of this code has been taken from entrust,
  * a role & permission management solution for Laravel.
@@ -12,14 +9,19 @@ use Illuminate\Database\Schema\Blueprint;
  * @license MIT
  * @url https://github.com/Zizaco/entrust
  */
-class AddRolesAndPermissions extends Migration
+
+use Carbon\Carbon;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         // Create table for storing roles
         Schema::create('roles', function (Blueprint $table) {
@@ -70,22 +72,22 @@ class AddRolesAndPermissions extends Migration
             'name'         => 'admin',
             'display_name' => 'Admin',
             'description'  => 'Administrator of the whole application',
-            'created_at'   => \Carbon\Carbon::now()->toDateTimeString(),
-            'updated_at'   => \Carbon\Carbon::now()->toDateTimeString(),
+            'created_at'   => Carbon::now()->toDateTimeString(),
+            'updated_at'   => Carbon::now()->toDateTimeString(),
         ]);
         $editorId = DB::table('roles')->insertGetId([
             'name'         => 'editor',
             'display_name' => 'Editor',
             'description'  => 'User can edit Books, Chapters & Pages',
-            'created_at'   => \Carbon\Carbon::now()->toDateTimeString(),
-            'updated_at'   => \Carbon\Carbon::now()->toDateTimeString(),
+            'created_at'   => Carbon::now()->toDateTimeString(),
+            'updated_at'   => Carbon::now()->toDateTimeString(),
         ]);
         $viewerId = DB::table('roles')->insertGetId([
             'name'         => 'viewer',
             'display_name' => 'Viewer',
             'description'  => 'User can view books & their content behind authentication',
-            'created_at'   => \Carbon\Carbon::now()->toDateTimeString(),
-            'updated_at'   => \Carbon\Carbon::now()->toDateTimeString(),
+            'created_at'   => Carbon::now()->toDateTimeString(),
+            'updated_at'   => Carbon::now()->toDateTimeString(),
         ]);
 
         // Create default CRUD permissions and allocate to admins and editors
@@ -96,8 +98,8 @@ class AddRolesAndPermissions extends Migration
                 $newPermId = DB::table('permissions')->insertGetId([
                     'name'         => strtolower($entity) . '-' . strtolower($op),
                     'display_name' => $op . ' ' . $entity . 's',
-                    'created_at'   => \Carbon\Carbon::now()->toDateTimeString(),
-                    'updated_at'   => \Carbon\Carbon::now()->toDateTimeString(),
+                    'created_at'   => Carbon::now()->toDateTimeString(),
+                    'updated_at'   => Carbon::now()->toDateTimeString(),
                 ]);
                 DB::table('permission_role')->insert([
                     ['permission_id' => $newPermId, 'role_id' => $adminId],
@@ -114,8 +116,8 @@ class AddRolesAndPermissions extends Migration
                 $newPermId = DB::table('permissions')->insertGetId([
                     'name'         => strtolower($entity) . '-' . strtolower($op),
                     'display_name' => $op . ' ' . $entity,
-                    'created_at'   => \Carbon\Carbon::now()->toDateTimeString(),
-                    'updated_at'   => \Carbon\Carbon::now()->toDateTimeString(),
+                    'created_at'   => Carbon::now()->toDateTimeString(),
+                    'updated_at'   => Carbon::now()->toDateTimeString(),
                 ]);
                 DB::table('permission_role')->insert([
                     'permission_id' => $newPermId,
@@ -137,14 +139,12 @@ class AddRolesAndPermissions extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::drop('permission_role');
         Schema::drop('permissions');
         Schema::drop('role_user');
         Schema::drop('roles');
     }
-}
+};

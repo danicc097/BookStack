@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use Illuminate\Foundation\Http\Middleware\ValidatePostSize;
 use Illuminate\Support\Facades\Log;
 
 class ErrorTest extends TestCase
@@ -20,6 +21,35 @@ class ErrorTest extends TestCase
         $notFound->assertStatus(404);
         $notFound->assertDontSeeText('Log in');
         $notFound->assertSeeText('tester');
+    }
+
+    public function test_404_page_does_not_non_visible_content()
+    {
+        $editor = $this->users->editor();
+        $book = $this->entities->book();
+
+        $this->actingAs($editor)->get($book->getUrl())->assertOk();
+
+        $this->permissions->disableEntityInheritedPermissions($book);
+
+        $this->actingAs($editor)->get($book->getUrl())->assertNotFound();
+    }
+
+    public function test_404_page_shows_visible_content_within_non_visible_parent()
+    {
+        $editor = $this->users->editor();
+        $book = $this->entities->book();
+        $page = $book->pages()->first();
+
+        $this->actingAs($editor)->get($page->getUrl())->assertOk();
+
+        $this->permissions->disableEntityInheritedPermissions($book);
+        $this->permissions->addEntityPermission($page, ['view'], $editor->roles()->first());
+
+        $resp = $this->actingAs($editor)->get($book->getUrl());
+        $resp->assertNotFound();
+        $resp->assertSee($page->name);
+        $resp->assertDontSee($book->name);
     }
 
     public function test_item_not_found_does_not_get_logged_to_file()
@@ -44,5 +74,17 @@ class ErrorTest extends TestCase
         $resp = $this->actingAs($this->users->viewer())->get('/uploads/images/gallery/2021-05/anonexistingimage.png');
         $resp->assertStatus(404);
         $resp->assertSeeText('Image Not Found');
+    }
+
+    public function test_posts_above_php_limit_shows_friendly_error()
+    {
+        // Fake super large JSON request
+        $resp = $this->asEditor()->call('GET', '/books', [], [], [], [
+            'CONTENT_LENGTH' => '10000000000',
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $resp->assertStatus(413);
+        $resp->assertJson(['error' => 'The server cannot receive the provided amount of data. Try again with less data or a smaller file.']);
     }
 }

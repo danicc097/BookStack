@@ -1,31 +1,49 @@
-import {build as buildEditorConfig} from "../wysiwyg/config";
-import {Component} from "./component";
+import {Component} from './component';
 
 export class WysiwygEditor extends Component {
 
     setup() {
         this.elem = this.$el;
+        this.editContainer = this.$refs.editContainer;
+        this.input = this.$refs.input;
 
-        this.pageId = this.$opts.pageId;
-        this.textDirection = this.$opts.textDirection;
-        this.isDarkMode = document.documentElement.classList.contains('dark-mode');
+        /** @var {SimpleWysiwygEditorInterface|null} */
+        this.editor = null;
 
-        this.tinyMceConfig = buildEditorConfig({
-            language: this.$opts.language,
-            containerElement: this.elem,
-            darkMode: this.isDarkMode,
-            textDirection: this.textDirection,
-            drawioUrl: this.getDrawIoUrl(),
-            pageId: Number(this.pageId),
-            translations: {
-                imageUploadErrorText: this.$opts.imageUploadErrorText,
-                serverUploadLimitText: this.$opts.serverUploadLimitText,
-            },
-            translationMap: window.editor_translations,
+        const translations = {
+            ...window.editor_translations,
+            imageUploadErrorText: this.$opts.imageUploadErrorText,
+            serverUploadLimitText: this.$opts.serverUploadLimitText,
+        };
+
+        window.importVersioned('wysiwyg').then(wysiwyg => {
+            const editorContent = this.input.value;
+            this.editor = wysiwyg.createPageEditorInstance(this.editContainer, editorContent, {
+                drawioUrl: this.getDrawIoUrl(),
+                pageId: Number(this.$opts.pageId),
+                darkMode: document.documentElement.classList.contains('dark-mode'),
+                textDirection: this.$opts.textDirection,
+                translations,
+            });
         });
 
-        window.$events.emitPublic(this.elem, 'editor-tinymce::pre-init', {config: this.tinyMceConfig});
-        window.tinymce.init(this.tinyMceConfig);
+        let handlingFormSubmit = false;
+        this.input.form.addEventListener('submit', event => {
+            if (!this.editor) {
+                return;
+            }
+
+            if (!handlingFormSubmit) {
+                event.preventDefault();
+                handlingFormSubmit = true;
+                this.editor.getContentAsHtml().then(html => {
+                    this.input.value = html;
+                    this.input.form.submit();
+                });
+            } else {
+                handlingFormSubmit = false;
+            }
+        });
     }
 
     getDrawIoUrl() {
@@ -34,6 +52,17 @@ export class WysiwygEditor extends Component {
             return drawioUrlElem.getAttribute('drawio-url');
         }
         return '';
+    }
+
+    /**
+     * Get the content of this editor.
+     * Used by the parent page editor component.
+     * @return {Promise<{html: String}>}
+     */
+    async getContent() {
+        return {
+            html: await this.editor.getContentAsHtml(),
+        };
     }
 
 }

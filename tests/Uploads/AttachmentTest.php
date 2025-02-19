@@ -6,71 +6,10 @@ use BookStack\Entities\Models\Page;
 use BookStack\Entities\Repos\PageRepo;
 use BookStack\Entities\Tools\TrashCan;
 use BookStack\Uploads\Attachment;
-use BookStack\Uploads\AttachmentService;
-use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class AttachmentTest extends TestCase
 {
-    /**
-     * Get a test file that can be uploaded.
-     */
-    protected function getTestFile(string $fileName): UploadedFile
-    {
-        return new UploadedFile(base_path('tests/test-data/test-file.txt'), $fileName, 'text/plain', null, true);
-    }
-
-    /**
-     * Uploads a file with the given name.
-     */
-    protected function uploadFile(string $name, int $uploadedTo = 0): \Illuminate\Testing\TestResponse
-    {
-        $file = $this->getTestFile($name);
-
-        return $this->call('POST', '/attachments/upload', ['uploaded_to' => $uploadedTo], [], ['file' => $file], []);
-    }
-
-    /**
-     * Create a new attachment.
-     */
-    protected function createAttachment(Page $page): Attachment
-    {
-        $this->post('attachments/link', [
-            'attachment_link_url'         => 'https://example.com',
-            'attachment_link_name'        => 'Example Attachment Link',
-            'attachment_link_uploaded_to' => $page->id,
-        ]);
-
-        return Attachment::query()->latest()->first();
-    }
-
-    /**
-     * Create a new upload attachment from the given data.
-     */
-    protected function createUploadAttachment(Page $page, string $filename, string $content, string $mimeType): Attachment
-    {
-        $file = tmpfile();
-        $filePath = stream_get_meta_data($file)['uri'];
-        file_put_contents($filePath, $content);
-        $upload = new UploadedFile($filePath, $filename, $mimeType, null, true);
-
-        $this->call('POST', '/attachments/upload', ['uploaded_to' => $page->id], [], ['file' => $upload], []);
-
-        return $page->attachments()->latest()->firstOrFail();
-    }
-
-    /**
-     * Delete all uploaded files.
-     * To assist with cleanup.
-     */
-    protected function deleteUploads()
-    {
-        $fileService = $this->app->make(AttachmentService::class);
-        foreach (Attachment::all() as $file) {
-            $fileService->deleteFile($file);
-        }
-    }
-
     public function test_file_upload()
     {
         $page = $this->entities->page();
@@ -87,7 +26,7 @@ class AttachmentTest extends TestCase
             'updated_by' => $admin->id,
         ];
 
-        $upload = $this->uploadFile($fileName, $page->id);
+        $upload = $this->files->uploadAttachmentFile($this, $fileName, $page->id);
         $upload->assertStatus(200);
 
         $attachment = Attachment::query()->orderBy('id', 'desc')->first();
@@ -96,7 +35,7 @@ class AttachmentTest extends TestCase
         $expectedResp['path'] = $attachment->path;
         $this->assertDatabaseHas('attachments', $expectedResp);
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_file_upload_does_not_use_filename()
@@ -104,13 +43,14 @@ class AttachmentTest extends TestCase
         $page = $this->entities->page();
         $fileName = 'upload_test_file.txt';
 
-        $upload = $this->asAdmin()->uploadFile($fileName, $page->id);
+        $this->asAdmin();
+        $upload = $this->files->uploadAttachmentFile($this, $fileName, $page->id);
         $upload->assertStatus(200);
 
         $attachment = Attachment::query()->orderBy('id', 'desc')->first();
         $this->assertStringNotContainsString($fileName, $attachment->path);
         $this->assertStringEndsWith('-txt', $attachment->path);
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_file_display_and_access()
@@ -119,7 +59,7 @@ class AttachmentTest extends TestCase
         $this->asAdmin();
         $fileName = 'upload_test_file.txt';
 
-        $upload = $this->uploadFile($fileName, $page->id);
+        $upload = $this->files->uploadAttachmentFile($this, $fileName, $page->id);
         $upload->assertStatus(200);
         $attachment = Attachment::orderBy('id', 'desc')->take(1)->first();
 
@@ -131,7 +71,7 @@ class AttachmentTest extends TestCase
         $content = $attachmentGet->streamedContent();
         $this->assertStringContainsString('Hi, This is a test file for testing the upload process.', $content);
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_attaching_link_to_page()
@@ -168,7 +108,30 @@ class AttachmentTest extends TestCase
         $attachmentGet = $this->get($attachment->getUrl());
         $attachmentGet->assertRedirect('https://example.com');
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
+    }
+
+    public function test_attaching_long_links_to_a_page()
+    {
+        $page = $this->entities->page();
+
+        $link = 'https://example.com?query=' . str_repeat('catsIScool', 195);
+        $linkReq = $this->asAdmin()->post('attachments/link', [
+            'attachment_link_url'         => $link,
+            'attachment_link_name'        => 'Example Attachment Link',
+            'attachment_link_uploaded_to' => $page->id,
+        ]);
+
+        $linkReq->assertStatus(200);
+        $this->assertDatabaseHas('attachments', [
+            'uploaded_to' => $page->id,
+            'path' => $link,
+            'external' => true,
+        ]);
+
+        $attachment = $page->attachments()->where('external', '=', true)->first();
+        $resp = $this->get($attachment->getUrl());
+        $resp->assertRedirect($link);
     }
 
     public function test_attachment_updating()
@@ -176,7 +139,7 @@ class AttachmentTest extends TestCase
         $page = $this->entities->page();
         $this->asAdmin();
 
-        $attachment = $this->createAttachment($page);
+        $attachment = Attachment::factory()->create(['uploaded_to' => $page->id]);
         $update = $this->call('PUT', 'attachments/' . $attachment->id, [
             'attachment_edit_name' => 'My new attachment name',
             'attachment_edit_url'  => 'https://test.example.com',
@@ -192,7 +155,7 @@ class AttachmentTest extends TestCase
         $update->assertStatus(200);
         $this->assertDatabaseHas('attachments', $expectedData);
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_file_deletion()
@@ -200,7 +163,7 @@ class AttachmentTest extends TestCase
         $page = $this->entities->page();
         $this->asAdmin();
         $fileName = 'deletion_test.txt';
-        $this->uploadFile($fileName, $page->id);
+        $this->files->uploadAttachmentFile($this, $fileName, $page->id);
 
         $attachment = Attachment::query()->orderBy('id', 'desc')->first();
         $filePath = storage_path($attachment->path);
@@ -214,7 +177,7 @@ class AttachmentTest extends TestCase
         ]);
         $this->assertFalse(file_exists($filePath), 'File at path ' . $filePath . ' was not deleted as expected');
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_attachment_deletion_on_page_deletion()
@@ -222,7 +185,7 @@ class AttachmentTest extends TestCase
         $page = $this->entities->page();
         $this->asAdmin();
         $fileName = 'deletion_test.txt';
-        $this->uploadFile($fileName, $page->id);
+        $this->files->uploadAttachmentFile($this, $fileName, $page->id);
 
         $attachment = Attachment::query()->orderBy('id', 'desc')->first();
         $filePath = storage_path($attachment->path);
@@ -240,7 +203,7 @@ class AttachmentTest extends TestCase
         ]);
         $this->assertFalse(file_exists($filePath), 'File at path ' . $filePath . ' was not deleted as expected');
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_attachment_access_without_permission_shows_404()
@@ -250,7 +213,7 @@ class AttachmentTest extends TestCase
         $page = $this->entities->page(); /** @var Page $page */
         $this->actingAs($admin);
         $fileName = 'permission_test.txt';
-        $this->uploadFile($fileName, $page->id);
+        $this->files->uploadAttachmentFile($this, $fileName, $page->id);
         $attachment = Attachment::orderBy('id', 'desc')->take(1)->first();
 
         $this->permissions->setEntityPermissions($page, [], []);
@@ -260,7 +223,7 @@ class AttachmentTest extends TestCase
         $attachmentGet->assertStatus(404);
         $attachmentGet->assertSee('Attachment not found');
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_data_and_js_links_cannot_be_attached_to_a_page()
@@ -290,7 +253,7 @@ class AttachmentTest extends TestCase
             ]);
         }
 
-        $attachment = $this->createAttachment($page);
+        $attachment = Attachment::factory()->create(['uploaded_to' => $page->id]);
 
         foreach ($badLinks as $badLink) {
             $linkReq = $this->put('attachments/' . $attachment->id, [
@@ -304,13 +267,57 @@ class AttachmentTest extends TestCase
         }
     }
 
+    public function test_attachment_delete_only_shows_with_permission()
+    {
+        $this->asAdmin();
+        $page = $this->entities->page();
+        $this->files->uploadAttachmentFile($this, 'upload_test.txt', $page->id);
+        $attachment = $page->attachments()->first();
+        $viewer = $this->users->viewer();
+
+        $this->permissions->grantUserRolePermissions($viewer, ['page-update-all', 'attachment-create-all']);
+
+        $resp = $this->actingAs($viewer)->get($page->getUrl('/edit'));
+        $html = $this->withHtml($resp);
+        $html->assertElementExists(".card[data-id=\"{$attachment->id}\"]");
+        $html->assertElementNotExists(".card[data-id=\"{$attachment->id}\"] button[title=\"Delete\"]");
+
+        $this->permissions->grantUserRolePermissions($viewer, ['attachment-delete-all']);
+
+        $resp = $this->actingAs($viewer)->get($page->getUrl('/edit'));
+        $html = $this->withHtml($resp);
+        $html->assertElementExists(".card[data-id=\"{$attachment->id}\"] button[title=\"Delete\"]");
+    }
+
+    public function test_attachment_edit_only_shows_with_permission()
+    {
+        $this->asAdmin();
+        $page = $this->entities->page();
+        $this->files->uploadAttachmentFile($this, 'upload_test.txt', $page->id);
+        $attachment = $page->attachments()->first();
+        $viewer = $this->users->viewer();
+
+        $this->permissions->grantUserRolePermissions($viewer, ['page-update-all', 'attachment-create-all']);
+
+        $resp = $this->actingAs($viewer)->get($page->getUrl('/edit'));
+        $html = $this->withHtml($resp);
+        $html->assertElementExists(".card[data-id=\"{$attachment->id}\"]");
+        $html->assertElementNotExists(".card[data-id=\"{$attachment->id}\"] button[title=\"Edit\"]");
+
+        $this->permissions->grantUserRolePermissions($viewer, ['attachment-update-all']);
+
+        $resp = $this->actingAs($viewer)->get($page->getUrl('/edit'));
+        $html = $this->withHtml($resp);
+        $html->assertElementExists(".card[data-id=\"{$attachment->id}\"] button[title=\"Edit\"]");
+    }
+
     public function test_file_access_with_open_query_param_provides_inline_response_with_correct_content_type()
     {
         $page = $this->entities->page();
         $this->asAdmin();
         $fileName = 'upload_test_file.txt';
 
-        $upload = $this->uploadFile($fileName, $page->id);
+        $upload = $this->files->uploadAttachmentFile($this, $fileName, $page->id);
         $upload->assertStatus(200);
         $attachment = Attachment::query()->orderBy('id', 'desc')->take(1)->first();
 
@@ -320,7 +327,7 @@ class AttachmentTest extends TestCase
         $attachmentGet->assertHeader('Content-Disposition', 'inline; filename="upload_test_file.txt"');
         $attachmentGet->assertHeader('X-Content-Type-Options', 'nosniff');
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_html_file_access_with_open_forces_plain_content_type()
@@ -328,14 +335,14 @@ class AttachmentTest extends TestCase
         $page = $this->entities->page();
         $this->asAdmin();
 
-        $attachment = $this->createUploadAttachment($page, 'test_file.html', '<html></html><p>testing</p>', 'text/html');
+        $attachment = $this->files->uploadAttachmentDataToPage($this, $page, 'test_file.html', '<html></html><p>testing</p>', 'text/html');
 
         $attachmentGet = $this->get($attachment->getUrl(true));
         // http-foundation/Response does some 'fixing' of responses to add charsets to text responses.
         $attachmentGet->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
         $attachmentGet->assertHeader('Content-Disposition', 'inline; filename="test_file.html"');
 
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
     }
 
     public function test_file_upload_works_when_local_secure_restricted_is_in_use()
@@ -345,11 +352,120 @@ class AttachmentTest extends TestCase
         $page = $this->entities->page();
         $fileName = 'upload_test_file.txt';
 
-        $upload = $this->asAdmin()->uploadFile($fileName, $page->id);
+        $this->asAdmin();
+        $upload = $this->files->uploadAttachmentFile($this, $fileName, $page->id);
         $upload->assertStatus(200);
 
         $attachment = Attachment::query()->orderBy('id', 'desc')->where('uploaded_to', '=', $page->id)->first();
         $this->assertFileExists(storage_path($attachment->path));
-        $this->deleteUploads();
+        $this->files->deleteAllAttachmentFiles();
+    }
+
+    public function test_file_get_range_access()
+    {
+        $page = $this->entities->page();
+        $this->asAdmin();
+        $attachment = $this->files->uploadAttachmentDataToPage($this, $page, 'my_text.txt', 'abc123456', 'text/plain');
+
+        // Download access
+        $resp = $this->get($attachment->getUrl(), ['Range' => 'bytes=3-5']);
+        $resp->assertStatus(206);
+        $resp->assertStreamedContent('123');
+        $resp->assertHeader('Content-Length', '3');
+        $resp->assertHeader('Content-Range', 'bytes 3-5/9');
+
+        // Inline access
+        $resp = $this->get($attachment->getUrl(true), ['Range' => 'bytes=5-7']);
+        $resp->assertStatus(206);
+        $resp->assertStreamedContent('345');
+        $resp->assertHeader('Content-Length', '3');
+        $resp->assertHeader('Content-Range', 'bytes 5-7/9');
+
+        $this->files->deleteAllAttachmentFiles();
+    }
+
+    public function test_file_head_range_returns_no_content()
+    {
+        $page = $this->entities->page();
+        $this->asAdmin();
+        $attachment = $this->files->uploadAttachmentDataToPage($this, $page, 'my_text.txt', 'abc123456', 'text/plain');
+
+        $resp = $this->head($attachment->getUrl(), ['Range' => 'bytes=0-9']);
+        $resp->assertStreamedContent('');
+        $resp->assertHeader('Content-Length', '9');
+        $resp->assertStatus(200);
+
+        $this->files->deleteAllAttachmentFiles();
+    }
+
+    public function test_file_head_range_edge_cases()
+    {
+        $page = $this->entities->page();
+        $this->asAdmin();
+
+        // Mime-type "sniffing" happens on first 2k bytes, hence this content (2005 bytes)
+        $content = '01234' . str_repeat('a', 1990) . '0123456789';
+        $attachment = $this->files->uploadAttachmentDataToPage($this, $page, 'my_text.txt', $content, 'text/plain');
+
+        // Test for both inline and download attachment serving
+        foreach ([true, false] as $isInline) {
+            // No end range
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=5-']);
+            $resp->assertStreamedContent(substr($content, 5));
+            $resp->assertHeader('Content-Length', '2000');
+            $resp->assertHeader('Content-Range', 'bytes 5-2004/2005');
+            $resp->assertStatus(206);
+
+            // End only range
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=-10']);
+            $resp->assertStreamedContent('0123456789');
+            $resp->assertHeader('Content-Length', '10');
+            $resp->assertHeader('Content-Range', 'bytes 1995-2004/2005');
+            $resp->assertStatus(206);
+
+            // Range across sniff point
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=1997-2002']);
+            $resp->assertStreamedContent('234567');
+            $resp->assertHeader('Content-Length', '6');
+            $resp->assertHeader('Content-Range', 'bytes 1997-2002/2005');
+            $resp->assertStatus(206);
+
+            // Range up to sniff point
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=0-1997']);
+            $resp->assertHeader('Content-Length', '1998');
+            $resp->assertHeader('Content-Range', 'bytes 0-1997/2005');
+            $resp->assertStreamedContent(substr($content, 0, 1998));
+            $resp->assertStatus(206);
+
+            // Range beyond sniff point
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=2001-2003']);
+            $resp->assertStreamedContent('678');
+            $resp->assertHeader('Content-Length', '3');
+            $resp->assertHeader('Content-Range', 'bytes 2001-2003/2005');
+            $resp->assertStatus(206);
+
+            // Range beyond content
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=0-2010']);
+            $resp->assertStreamedContent($content);
+            $resp->assertHeader('Content-Length', '2005');
+            $resp->assertHeader('Content-Range', 'bytes 0-2004/2005');
+            $resp->assertStatus(206);
+
+            // Range start before end
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=50-10']);
+            $resp->assertStreamedContent($content);
+            $resp->assertHeader('Content-Length', '2005');
+            $resp->assertHeader('Content-Range', 'bytes */2005');
+            $resp->assertStatus(416);
+
+            // Full range request
+            $resp = $this->get($attachment->getUrl($isInline), ['Range' => 'bytes=0-']);
+            $resp->assertStreamedContent($content);
+            $resp->assertHeader('Content-Length', '2005');
+            $resp->assertHeader('Content-Range', 'bytes 0-2004/2005');
+            $resp->assertStatus(206);
+        }
+
+        $this->files->deleteAllAttachmentFiles();
     }
 }

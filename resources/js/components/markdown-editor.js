@@ -1,6 +1,4 @@
-import {debounce} from "../services/util";
-import {Component} from "./component";
-import {init as initEditor} from "../markdown/editor";
+import {Component} from './component';
 
 export class MarkdownEditor extends Component {
 
@@ -17,21 +15,23 @@ export class MarkdownEditor extends Component {
         this.divider = this.$refs.divider;
         this.displayWrap = this.$refs.displayWrap;
 
-        const settingContainer = this.$refs.settingContainer;
+        const {settingContainer} = this.$refs;
         const settingInputs = settingContainer.querySelectorAll('input[type="checkbox"]');
 
         this.editor = null;
-        initEditor({
-            pageId: this.pageId,
-            container: this.elem,
-            displayEl: this.display,
-            inputEl: this.input,
-            drawioUrl: this.getDrawioUrl(),
-            settingInputs: Array.from(settingInputs),
-            text: {
-                serverUploadLimit: this.serverUploadLimitText,
-                imageUploadError: this.imageUploadErrorText,
-            },
+        window.importVersioned('markdown').then(markdown => {
+            return markdown.init({
+                pageId: this.pageId,
+                container: this.elem,
+                displayEl: this.display,
+                inputEl: this.input,
+                drawioUrl: this.getDrawioUrl(),
+                settingInputs: Array.from(settingInputs),
+                text: {
+                    serverUploadLimit: this.serverUploadLimitText,
+                    imageUploadError: this.imageUploadErrorText,
+                },
+            });
         }).then(editor => {
             this.editor = editor;
             this.setupListeners();
@@ -45,19 +45,18 @@ export class MarkdownEditor extends Component {
         window.$events.emitPublic(this.elem, 'editor-markdown::setup', {
             markdownIt: this.editor.markdown.getRenderer(),
             displayEl: this.display,
-            codeMirrorInstance: this.editor.cm,
+            cmEditorView: this.editor.cm,
         });
     }
 
     setupListeners() {
-
         // Button actions
         this.elem.addEventListener('click', event => {
-            let button = event.target.closest('button[data-action]');
+            const button = event.target.closest('button[data-action]');
             if (button === null) return;
 
             const action = button.getAttribute('data-action');
-            if (action === 'insertImage') this.editor.actions.insertImage();
+            if (action === 'insertImage') this.editor.actions.showImageInsert();
             if (action === 'insertLink') this.editor.actions.showLinkSelector();
             if (action === 'insertDrawing' && (event.ctrlKey || event.metaKey)) {
                 this.editor.actions.showImageManager();
@@ -80,29 +79,23 @@ export class MarkdownEditor extends Component {
             toolbarLabel.closest('.markdown-editor-wrap').classList.add('active');
         });
 
-        // Refresh CodeMirror on container resize
-        const resizeDebounced = debounce(() => this.editor.cm.refresh(), 100, false);
-        const observer = new ResizeObserver(resizeDebounced);
-        observer.observe(this.elem);
-
         this.handleDividerDrag();
     }
 
     handleDividerDrag() {
-        this.divider.addEventListener('pointerdown', event => {
+        this.divider.addEventListener('pointerdown', () => {
             const wrapRect = this.elem.getBoundingClientRect();
-            const moveListener = (event) => {
+            const moveListener = event => {
                 const xRel = event.pageX - wrapRect.left;
                 const xPct = Math.min(Math.max(20, Math.floor((xRel / wrapRect.width) * 100)), 80);
-                this.displayWrap.style.flexBasis = `${100-xPct}%`;
+                this.displayWrap.style.flexBasis = `${100 - xPct}%`;
                 this.editor.settings.set('editorWidth', xPct);
             };
-            const upListener = (event) => {
+            const upListener = () => {
                 window.removeEventListener('pointermove', moveListener);
                 window.removeEventListener('pointerup', upListener);
                 this.display.style.pointerEvents = null;
                 document.body.style.userSelect = null;
-                this.editor.cm.refresh();
             };
 
             this.display.style.pointerEvents = 'none';
@@ -112,7 +105,7 @@ export class MarkdownEditor extends Component {
         });
         const widthSetting = this.editor.settings.get('editorWidth');
         if (widthSetting) {
-            this.displayWrap.style.flexBasis = `${100-widthSetting}%`;
+            this.displayWrap.style.flexBasis = `${100 - widthSetting}%`;
         }
     }
 
@@ -135,6 +128,15 @@ export class MarkdownEditor extends Component {
         }
 
         return drawioAttrEl.getAttribute('drawio-url') || '';
+    }
+
+    /**
+     * Get the content of this editor.
+     * Used by the parent page editor component.
+     * @return {Promise<{html: String, markdown: String}>}
+     */
+    async getContent() {
+        return this.editor.actions.getContent();
     }
 
 }

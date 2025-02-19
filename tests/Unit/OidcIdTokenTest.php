@@ -2,8 +2,8 @@
 
 namespace Tests\Unit;
 
-use BookStack\Auth\Access\Oidc\OidcIdToken;
-use BookStack\Auth\Access\Oidc\OidcInvalidTokenException;
+use BookStack\Access\Oidc\OidcIdToken;
+use BookStack\Access\Oidc\OidcInvalidTokenException;
 use Tests\Helpers\OidcJwtHelper;
 use Tests\TestCase;
 
@@ -113,7 +113,7 @@ class OidcIdTokenTest extends TestCase
             // 2. aud claim present
             ['Missing token audience value', ['aud' => null]],
             // 2. aud claim validates all values against those expected (Only expect single)
-            ['Token audience value has 2 values, Expected 1', ['aud' => ['abc', 'def']]],
+            ['Token audience value has 2 values, Expected 1', ['aud' => ['xxyyzz.aaa.bbccdd.123', 'def']]],
             // 2. aud claim matches client id
             ['Token audience value did not match the expected client_id', ['aud' => 'xxyyzz.aaa.bbccdd.456']],
             // 4. azp claim matches client id if present

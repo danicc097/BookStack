@@ -6,14 +6,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class FlattenEntityPermissionsTable extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         // Remove entries for non-existing roles (Caused by previous lack of deletion handling)
         $roleIds = DB::table('roles')->pluck('id');
@@ -63,10 +61,8 @@ class FlattenEntityPermissionsTable extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         // Create old table structure for entity_permissions
         Schema::create('old_entity_permissions', function (Blueprint $table) {
@@ -102,4 +98,4 @@ class FlattenEntityPermissionsTable extends Migration
         Schema::dropIfExists('entity_permissions');
         Schema::rename('old_entity_permissions', 'entity_permissions');
     }
-}
+};

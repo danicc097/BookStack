@@ -10,6 +10,7 @@ use BookStack\Entities\Models\Deletion;
 use BookStack\Entities\Models\Entity;
 use BookStack\Entities\Models\HasCoverImage;
 use BookStack\Entities\Models\Page;
+use BookStack\Entities\Queries\EntityQueries;
 use BookStack\Exceptions\NotifyException;
 use BookStack\Facades\Activity;
 use BookStack\Uploads\AttachmentService;
@@ -20,6 +21,11 @@ use Illuminate\Support\Carbon;
 
 class TrashCan
 {
+    public function __construct(
+        protected EntityQueries $queries,
+    ) {
+    }
+
     /**
      * Send a shelf to the recycle bin.
      *
@@ -197,10 +203,20 @@ class TrashCan
         $page->allRevisions()->delete();
 
         // Delete Attached Files
-        $attachmentService = app(AttachmentService::class);
+        $attachmentService = app()->make(AttachmentService::class);
         foreach ($page->attachments as $attachment) {
             $attachmentService->deleteFile($attachment);
         }
+
+        // Remove book template usages
+        $this->queries->books->start()
+            ->where('default_template_id', '=', $page->id)
+            ->update(['default_template_id' => null]);
+
+        // Remove chapter template usages
+        $this->queries->chapters->start()
+            ->where('default_template_id', '=', $page->id)
+            ->update(['default_template_id' => null]);
 
         $page->forceDelete();
 
@@ -376,6 +392,7 @@ class TrashCan
         $entity->searchTerms()->delete();
         $entity->deletions()->delete();
         $entity->favourites()->delete();
+        $entity->watches()->delete();
         $entity->referencesTo()->delete();
         $entity->referencesFrom()->delete();
 

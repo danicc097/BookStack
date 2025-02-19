@@ -5,14 +5,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class AddOwnedByFieldToEntities extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         $tables = ['pages', 'books', 'chapters', 'bookshelves'];
         foreach ($tables as $table) {
@@ -30,10 +28,8 @@ class AddOwnedByFieldToEntities extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         $tables = ['pages', 'books', 'chapters', 'bookshelves'];
         foreach ($tables as $table) {
@@ -46,4 +42,4 @@ class AddOwnedByFieldToEntities extends Migration
             $table->renameColumn('owned_by', 'created_by');
         });
     }
-}
+};

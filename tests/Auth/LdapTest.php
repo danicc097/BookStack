@@ -2,23 +2,21 @@
 
 namespace Tests\Auth;
 
-use BookStack\Auth\Access\Ldap;
-use BookStack\Auth\Access\LdapService;
-use BookStack\Auth\Role;
-use BookStack\Auth\User;
+use BookStack\Access\Ldap;
+use BookStack\Access\LdapService;
+use BookStack\Exceptions\LdapException;
+use BookStack\Users\Models\Role;
+use BookStack\Users\Models\User;
 use Illuminate\Testing\TestResponse;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
 class LdapTest extends TestCase
 {
-    /**
-     * @var MockInterface
-     */
-    protected $mockLdap;
+    protected MockInterface $mockLdap;
 
-    protected $mockUser;
-    protected $resourceId = 'resource-test';
+    protected User $mockUser;
+    protected string $resourceId = 'resource-test';
 
     protected function setUp(): void
     {
@@ -35,13 +33,13 @@ class LdapTest extends TestCase
             'services.ldap.id_attribute'           => 'uid',
             'services.ldap.user_to_groups'         => false,
             'services.ldap.version'                => '3',
-            'services.ldap.user_filter'            => '(&(uid=${user}))',
+            'services.ldap.user_filter'            => '(&(uid={user}))',
             'services.ldap.follow_referrals'       => false,
             'services.ldap.tls_insecure'           => false,
+            'services.ldap.tls_ca_cert'            => false,
             'services.ldap.thumbnail_attribute'    => null,
         ]);
-        $this->mockLdap = \Mockery::mock(Ldap::class);
-        $this->app[Ldap::class] = $this->mockLdap;
+        $this->mockLdap = $this->mock(Ldap::class);
         $this->mockUser = User::factory()->make();
     }
 
@@ -78,7 +76,7 @@ class LdapTest extends TestCase
     /**
      * Set LDAP method mocks for things we commonly call without altering.
      */
-    protected function commonLdapMocks(int $connects = 1, int $versions = 1, int $options = 2, int $binds = 4, int $escapes = 2, int $explodes = 0)
+    protected function commonLdapMocks(int $connects = 1, int $versions = 1, int $options = 2, int $binds = 4, int $escapes = 2, int $explodes = 0, int $groups = 0)
     {
         $this->mockLdap->shouldReceive('connect')->times($connects)->andReturn($this->resourceId);
         $this->mockLdap->shouldReceive('setVersion')->times($versions);
@@ -86,6 +84,13 @@ class LdapTest extends TestCase
         $this->mockLdap->shouldReceive('bind')->times($binds)->andReturn(true);
         $this->mockEscapes($escapes);
         $this->mockExplodes($explodes);
+        $this->mockGroupLookups($groups);
+    }
+
+    protected function mockGroupLookups(int $times = 1): void
+    {
+        $this->mockLdap->shouldReceive('read')->times($times)->andReturn(['count' => 0]);
+        $this->mockLdap->shouldReceive('getEntries')->times($times)->andReturn(['count' => 0]);
     }
 
     public function test_login()
@@ -96,7 +101,7 @@ class LdapTest extends TestCase
             ->andReturn(['count' => 1, 0 => [
                 'uid' => [$this->mockUser->name],
                 'cn'  => [$this->mockUser->name],
-                'dn'  => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'  => 'dc=test' . config('services.ldap.base_dn'),
             ]]);
 
         $resp = $this->mockUserLogin();
@@ -127,7 +132,7 @@ class LdapTest extends TestCase
             ->andReturn(['count' => 1, 0 => [
                 'uid' => [$this->mockUser->name],
                 'cn'  => [$this->mockUser->name],
-                'dn'  => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'  => 'dc=test' . config('services.ldap.base_dn'),
             ]]);
 
         $resp = $this->mockUserLogin();
@@ -182,6 +187,38 @@ class LdapTest extends TestCase
         $this->assertDatabaseHas('users', ['email' => $this->mockUser->email, 'email_confirmed' => false, 'external_auth_id' => 'cooluser456']);
     }
 
+    public function test_user_filter_default_placeholder_format()
+    {
+        config()->set('services.ldap.user_filter', '(&(uid={user}))');
+        $this->mockUser->name = 'barryldapuser';
+        $expectedFilter = '(&(uid=\62\61\72\72\79\6c\64\61\70\75\73\65\72))';
+
+        $this->commonLdapMocks(1, 1, 1, 1, 1);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')
+            ->once()
+            ->with($this->resourceId, config('services.ldap.base_dn'), $expectedFilter, \Mockery::type('array'))
+            ->andReturn(['count' => 0, 0 => []]);
+
+        $resp = $this->mockUserLogin();
+        $resp->assertRedirect('/login');
+    }
+
+    public function test_user_filter_old_placeholder_format()
+    {
+        config()->set('services.ldap.user_filter', '(&(username=${user}))');
+        $this->mockUser->name = 'barryldapuser';
+        $expectedFilter = '(&(username=\62\61\72\72\79\6c\64\61\70\75\73\65\72))';
+
+        $this->commonLdapMocks(1, 1, 1, 1, 1);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')
+            ->once()
+            ->with($this->resourceId, config('services.ldap.base_dn'), $expectedFilter, \Mockery::type('array'))
+            ->andReturn(['count' => 0, 0 => []]);
+
+        $resp = $this->mockUserLogin();
+        $resp->assertRedirect('/login');
+    }
+
     public function test_initial_incorrect_credentials()
     {
         $this->commonLdapMocks(1, 1, 1, 0, 1);
@@ -190,7 +227,7 @@ class LdapTest extends TestCase
             ->andReturn(['count' => 1, 0 => [
                 'uid' => [$this->mockUser->name],
                 'cn'  => [$this->mockUser->name],
-                'dn'  => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'  => 'dc=test' . config('services.ldap.base_dn'),
             ]]);
         $this->mockLdap->shouldReceive('bind')->times(2)->andReturn(true, false);
 
@@ -277,13 +314,13 @@ class LdapTest extends TestCase
             'services.ldap.remove_from_groups' => false,
         ]);
 
-        $this->commonLdapMocks(1, 1, 4, 5, 4, 6);
-        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(4)
+        $this->commonLdapMocks(1, 1, 4, 5, 2, 2, 2);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(2)
             ->with($this->resourceId, config('services.ldap.base_dn'), \Mockery::type('string'), \Mockery::type('array'))
             ->andReturn(['count' => 1, 0 => [
                 'uid'      => [$this->mockUser->name],
                 'cn'       => [$this->mockUser->name],
-                'dn'       => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'       => 'dc=test' . config('services.ldap.base_dn'),
                 'mail'     => [$this->mockUser->email],
                 'memberof' => [
                     'count' => 2,
@@ -322,13 +359,13 @@ class LdapTest extends TestCase
             'services.ldap.remove_from_groups' => true,
         ]);
 
-        $this->commonLdapMocks(1, 1, 3, 4, 3, 2);
-        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(3)
+        $this->commonLdapMocks(1, 1, 3, 4, 2, 1, 1);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(2)
             ->with($this->resourceId, config('services.ldap.base_dn'), \Mockery::type('string'), \Mockery::type('array'))
             ->andReturn(['count' => 1, 0 => [
                 'uid'      => [$this->mockUser->name],
                 'cn'       => [$this->mockUser->name],
-                'dn'       => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'       => 'dc=test' . config('services.ldap.base_dn'),
                 'mail'     => [$this->mockUser->email],
                 'memberof' => [
                     'count' => 1,
@@ -364,22 +401,26 @@ class LdapTest extends TestCase
             'dn'       => 'dc=test,' . config('services.ldap.base_dn'),
             'mail'     => [$this->mockUser->email],
         ]];
-        $this->commonLdapMocks(1, 1, 4, 5, 4, 2);
-        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(4)
+        $this->commonLdapMocks(1, 1, 4, 5, 2, 2, 0);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(2)
             ->with($this->resourceId, config('services.ldap.base_dn'), \Mockery::type('string'), \Mockery::type('array'))
             ->andReturn($userResp, ['count' => 1,
-                0                           => [
-                    'dn'       => 'dc=test,' . config('services.ldap.base_dn'),
+                0 => [
+                    'dn' => 'dc=test,' . config('services.ldap.base_dn'),
                     'memberof' => [
                         'count' => 1,
-                        0       => 'cn=ldaptester,ou=groups,dc=example,dc=com',
+                        0 => 'cn=ldaptester,ou=groups,dc=example,dc=com',
                     ],
                 ],
-            ], [
+            ]);
+
+        $this->mockLdap->shouldReceive('read')->times(2);
+        $this->mockLdap->shouldReceive('getEntries')->times(2)
+            ->andReturn([
                 'count' => 1,
-                0       => [
-                    'dn'       => 'cn=ldaptester,ou=groups,dc=example,dc=com',
-                    'memberof' => [
+                0 => [
+                    'dn'        => 'cn=ldaptester,ou=groups,dc=example,dc=com',
+                    'memberof'  => [
                         'count' => 1,
                         0       => 'cn=monsters,ou=groups,dc=example,dc=com',
                     ],
@@ -396,13 +437,58 @@ class LdapTest extends TestCase
                 ],
             ],
             'parsed_direct_user_groups' => [
-                'ldaptester',
+                'cn=ldaptester,ou=groups,dc=example,dc=com',
             ],
             'parsed_recursive_user_groups' => [
+                'cn=ldaptester,ou=groups,dc=example,dc=com',
+                'cn=monsters,ou=groups,dc=example,dc=com',
+            ],
+            'parsed_resulting_group_names' => [
                 'ldaptester',
                 'monsters',
             ],
         ]);
+    }
+
+    public function test_recursive_group_search_queries_via_full_dn()
+    {
+        app('config')->set([
+            'services.ldap.user_to_groups'     => true,
+            'services.ldap.group_attribute'    => 'memberOf',
+        ]);
+
+        $userResp = ['count' => 1, 0 => [
+            'uid'      => [$this->mockUser->name],
+            'cn'       => [$this->mockUser->name],
+            'dn'       => 'dc=test,' . config('services.ldap.base_dn'),
+            'mail'     => [$this->mockUser->email],
+        ]];
+        $groupResp = ['count' => 1,
+                      0 => [
+                          'dn'       => 'dc=test,' . config('services.ldap.base_dn'),
+                          'memberof' => [
+                              'count' => 1,
+                              0       => 'cn=ldaptester,ou=groups,dc=example,dc=com',
+                          ],
+                      ],
+        ];
+
+        $this->commonLdapMocks(1, 1, 3, 4, 2, 1);
+
+        $escapedName = ldap_escape($this->mockUser->name);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')->twice()
+            ->with($this->resourceId, config('services.ldap.base_dn'), "(&(uid={$escapedName}))", \Mockery::type('array'))
+            ->andReturn($userResp, $groupResp);
+
+        $this->mockLdap->shouldReceive('read')->times(1)
+            ->with($this->resourceId, 'cn=ldaptester,ou=groups,dc=example,dc=com', '(objectClass=*)', ['memberof'])
+            ->andReturn(['count' => 0]);
+        $this->mockLdap->shouldReceive('getEntries')->times(1)
+            ->with($this->resourceId, ['count' => 0])
+            ->andReturn(['count' => 0]);
+
+        $resp = $this->mockUserLogin();
+        $resp->assertRedirect('/');
     }
 
     public function test_external_auth_id_visible_in_roles_page_when_ldap_active()
@@ -423,13 +509,13 @@ class LdapTest extends TestCase
             'services.ldap.remove_from_groups' => true,
         ]);
 
-        $this->commonLdapMocks(1, 1, 3, 4, 3, 2);
-        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(3)
+        $this->commonLdapMocks(1, 1, 3, 4, 2, 1, 1);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(2)
             ->with($this->resourceId, config('services.ldap.base_dn'), \Mockery::type('string'), \Mockery::type('array'))
             ->andReturn(['count' => 1, 0 => [
                 'uid'      => [$this->mockUser->name],
                 'cn'       => [$this->mockUser->name],
-                'dn'       => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'       => 'dc=test' . config('services.ldap.base_dn'),
                 'mail'     => [$this->mockUser->email],
                 'memberof' => [
                     'count' => 1,
@@ -464,13 +550,13 @@ class LdapTest extends TestCase
             'services.ldap.remove_from_groups' => true,
         ]);
 
-        $this->commonLdapMocks(1, 1, 4, 5, 4, 6);
-        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(4)
+        $this->commonLdapMocks(1, 1, 4, 5, 2, 2, 2);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(2)
             ->with($this->resourceId, config('services.ldap.base_dn'), \Mockery::type('string'), \Mockery::type('array'))
             ->andReturn(['count' => 1, 0 => [
                 'uid'      => [$this->mockUser->name],
                 'cn'       => [$this->mockUser->name],
-                'dn'       => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'       => 'dc=test' . config('services.ldap.base_dn'),
                 'mail'     => [$this->mockUser->email],
                 'memberof' => [
                     'count' => 2,
@@ -504,7 +590,7 @@ class LdapTest extends TestCase
             ->andReturn(['count' => 1, 0 => [
                 'uid'         => [$this->mockUser->name],
                 'cn'          => [$this->mockUser->name],
-                'dn'          => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'          => 'dc=test' . config('services.ldap.base_dn'),
                 'displayname' => 'displayNameAttribute',
             ]]);
 
@@ -515,6 +601,33 @@ class LdapTest extends TestCase
         $resp->assertRedirect('/');
         $this->get('/')->assertSee('displayNameAttribute');
         $this->assertDatabaseHas('users', ['email' => $this->mockUser->email, 'email_confirmed' => false, 'external_auth_id' => $this->mockUser->name, 'name' => 'displayNameAttribute']);
+    }
+
+    public function test_login_uses_multiple_display_properties_if_defined()
+    {
+        app('config')->set([
+            'services.ldap.display_name_attribute' => 'firstname|middlename|noname|lastname',
+        ]);
+
+        $this->commonLdapMocks(1, 1, 1, 2, 1);
+        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(1)
+            ->with($this->resourceId, config('services.ldap.base_dn'), \Mockery::type('string'), \Mockery::type('array'))
+            ->andReturn(['count' => 1, 0 => [
+                'uid'         => [$this->mockUser->name],
+                'cn'          => [$this->mockUser->name],
+                'dn'          => 'dc=test' . config('services.ldap.base_dn'),
+                'firstname' => ['Barry'],
+                'middlename' => ['Elliott'],
+                'lastname' => ['Chuckle'],
+                'mail'     => [$this->mockUser->email],
+            ]]);
+
+        $this->mockUserLogin();
+
+        $this->assertDatabaseHas('users', [
+            'email' => $this->mockUser->email,
+            'name' => 'Barry Elliott Chuckle',
+        ]);
     }
 
     public function test_login_uses_default_display_name_attribute_if_specified_not_present()
@@ -529,7 +642,7 @@ class LdapTest extends TestCase
             ->andReturn(['count' => 1, 0 => [
                 'uid' => [$this->mockUser->name],
                 'cn'  => [$this->mockUser->name],
-                'dn'  => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'  => 'dc=test' . config('services.ldap.base_dn'),
             ]]);
 
         $this->mockUserLogin()->assertRedirect('/login');
@@ -546,39 +659,33 @@ class LdapTest extends TestCase
         ]);
     }
 
-    protected function checkLdapReceivesCorrectDetails($serverString, $expectedHost, $expectedPort)
+    protected function checkLdapReceivesCorrectDetails($serverString, $expectedHostString): void
     {
-        app('config')->set([
-            'services.ldap.server' => $serverString,
-        ]);
+        app('config')->set(['services.ldap.server' => $serverString]);
 
-        // Standard mocks
-        $this->commonLdapMocks(0, 1, 1, 2, 1);
-        $this->mockLdap->shouldReceive('searchAndGetEntries')->times(1)->andReturn(['count' => 1, 0 => [
-            'uid' => [$this->mockUser->name],
-            'cn'  => [$this->mockUser->name],
-            'dn'  => ['dc=test' . config('services.ldap.base_dn')],
-        ]]);
+        $this->mockLdap->shouldReceive('connect')
+            ->once()
+            ->with($expectedHostString)
+            ->andReturn(false);
 
-        $this->mockLdap->shouldReceive('connect')->once()
-            ->with($expectedHost, $expectedPort)->andReturn($this->resourceId);
         $this->mockUserLogin();
     }
 
-    public function test_ldap_port_provided_on_host_if_host_is_full_uri()
+    public function test_ldap_receives_correct_connect_host_from_config()
     {
-        $hostName = 'ldaps://bookstack:8080';
-        $this->checkLdapReceivesCorrectDetails($hostName, $hostName, 389);
-    }
+        $expectedResultByInput = [
+            'ldaps://bookstack:8080' => 'ldaps://bookstack:8080',
+            'ldap.bookstack.com:8080' => 'ldap://ldap.bookstack.com:8080',
+            'ldap.bookstack.com' => 'ldap://ldap.bookstack.com',
+            'ldaps://ldap.bookstack.com' => 'ldaps://ldap.bookstack.com',
+            'ldaps://ldap.bookstack.com ldap://a.b.com' => 'ldaps://ldap.bookstack.com ldap://a.b.com',
+        ];
 
-    public function test_ldap_port_parsed_from_server_if_host_is_not_full_uri()
-    {
-        $this->checkLdapReceivesCorrectDetails('ldap.bookstack.com:8080', 'ldap.bookstack.com', 8080);
-    }
-
-    public function test_default_ldap_port_used_if_not_in_server_string_and_not_uri()
-    {
-        $this->checkLdapReceivesCorrectDetails('ldap.bookstack.com', 'ldap.bookstack.com', 389);
+        foreach ($expectedResultByInput as $input => $expectedResult) {
+            $this->checkLdapReceivesCorrectDetails($input, $expectedResult);
+            $this->refreshApplication();
+            $this->setUp();
+        }
     }
 
     public function test_forgot_password_routes_inaccessible()
@@ -626,7 +733,7 @@ class LdapTest extends TestCase
                 'cn'  => [$this->mockUser->name],
                 // Test dumping binary data for avatar responses
                 'jpegphoto' => base64_decode('/9j/4AAQSkZJRg=='),
-                'dn'        => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'        => 'dc=test' . config('services.ldap.base_dn'),
             ]]);
 
         $resp = $this->post('/login', [
@@ -665,7 +772,7 @@ class LdapTest extends TestCase
             ->andReturn(['count' => 1, 0 => [
                 'uid' => [hex2bin('FFF8F7')],
                 'cn'  => [$this->mockUser->name],
-                'dn'  => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'  => 'dc=test' . config('services.ldap.base_dn'),
             ]]);
 
         $details = $ldapService->getUserDetails('test');
@@ -680,12 +787,12 @@ class LdapTest extends TestCase
             ->andReturn(['count' => 1, 0 => [
                 'uid'  => [$this->mockUser->name],
                 'cn'   => [$this->mockUser->name],
-                'dn'   => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'   => 'dc=test' . config('services.ldap.base_dn'),
                 'mail' => 'tester@example.com',
             ]], ['count' => 1, 0 => [
                 'uid'  => ['Barry'],
                 'cn'   => ['Scott'],
-                'dn'   => ['dc=bscott' . config('services.ldap.base_dn')],
+                'dn'   => 'dc=bscott' . config('services.ldap.base_dn'),
                 'mail' => 'tester@example.com',
             ]]);
 
@@ -710,13 +817,13 @@ class LdapTest extends TestCase
             'services.ldap.remove_from_groups' => true,
         ]);
 
-        $this->commonLdapMocks(1, 1, 6, 8, 6, 4);
+        $this->commonLdapMocks(1, 1, 6, 8, 4, 2, 2);
         $this->mockLdap->shouldReceive('searchAndGetEntries')
-            ->times(6)
+            ->times(4)
             ->andReturn(['count' => 1, 0 => [
                 'uid'      => [$user->name],
                 'cn'       => [$user->name],
-                'dn'       => ['dc=test' . config('services.ldap.base_dn')],
+                'dn'       => 'dc=test' . config('services.ldap.base_dn'),
                 'mail'     => [$user->email],
                 'memberof' => [
                     'count' => 1,
@@ -776,5 +883,35 @@ EBEQCgwSExIQEw8QEBD/yQALCAABAAEBAREA/8wABgAQEAX/2gAIAQEAAD8A0s8g/9k=')],
         $user = User::query()->where('email', '=', $this->mockUser->email)->first();
         $this->assertNotNull($user->avatar);
         $this->assertEquals('8c90748342f19b195b9c6b4eff742ded', md5_file(public_path($user->avatar->path)));
+    }
+
+    public function test_tls_ca_cert_option_throws_if_set_to_invalid_location()
+    {
+        $path = 'non_found_' . time();
+        config()->set(['services.ldap.tls_ca_cert' => $path]);
+
+        $this->commonLdapMocks(0, 0, 0, 0, 0);
+
+        $this->assertThrows(function () {
+            $this->withoutExceptionHandling()->mockUserLogin();
+        }, LdapException::class, "Provided path [{$path}] for LDAP TLS CA certs could not be resolved to an existing location");
+    }
+
+    public function test_tls_ca_cert_option_used_if_set_to_a_folder()
+    {
+        $path = $this->files->testFilePath('');
+        config()->set(['services.ldap.tls_ca_cert' => $path]);
+
+        $this->mockLdap->shouldReceive('setOption')->once()->with(null, LDAP_OPT_X_TLS_CACERTDIR, rtrim($path, '/'))->andReturn(true);
+        $this->runFailedAuthLogin();
+    }
+
+    public function test_tls_ca_cert_option_used_if_set_to_a_file()
+    {
+        $path = $this->files->testFilePath('test-file.txt');
+        config()->set(['services.ldap.tls_ca_cert' => $path]);
+
+        $this->mockLdap->shouldReceive('setOption')->once()->with(null, LDAP_OPT_X_TLS_CACERTFILE, $path)->andReturn(true);
+        $this->runFailedAuthLogin();
     }
 }

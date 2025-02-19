@@ -2,9 +2,9 @@
 
 namespace Tests\Auth;
 
-use BookStack\Auth\Access\UserInviteService;
-use BookStack\Auth\User;
-use BookStack\Notifications\UserInvite;
+use BookStack\Access\Notifications\UserInviteNotification;
+use BookStack\Access\UserInviteService;
+use BookStack\Users\Models\User;
 use Carbon\Carbon;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +29,7 @@ class UserInviteTest extends TestCase
 
         $newUser = User::query()->where('email', '=', $email)->orderBy('id', 'desc')->first();
 
-        Notification::assertSentTo($newUser, UserInvite::class);
+        Notification::assertSentTo($newUser, UserInviteNotification::class);
         $this->assertDatabaseHas('user_invites', [
             'user_id' => $newUser->id,
         ]);
@@ -50,11 +50,11 @@ class UserInviteTest extends TestCase
         $resp->assertRedirect('/settings/users');
 
         $newUser = User::query()->where('email', '=', $email)->orderBy('id', 'desc')->first();
-        Notification::assertSentTo($newUser, UserInvite::class, function ($notification, $channels, $notifiable) {
+        Notification::assertSentTo($newUser, UserInviteNotification::class, function ($notification, $channels, $notifiable) {
             /** @var MailMessage $mail */
             $mail = $notification->toMail($notifiable);
 
-            return 'Sie wurden eingeladen BookStack beizutreten!' === $mail->subject &&
+            return 'Sie wurden eingeladen, BookStack beizutreten!' === $mail->subject &&
                 'Ein Konto wurde für Sie auf BookStack erstellt.' === $mail->greeting;
         });
     }
@@ -136,5 +136,25 @@ class UserInviteTest extends TestCase
         $setPasswordPageResp = $this->get('/register/invite/' . $tokenEntry->token);
         $setPasswordPageResp->assertRedirect('/password/email');
         $setPasswordPageResp->assertSessionHas('error', 'This invitation link has expired. You can instead try to reset your account password.');
+    }
+
+    public function test_set_password_view_is_throttled()
+    {
+        for ($i = 0; $i < 11; $i++) {
+            $response = $this->get("/register/invite/tokenhere{$i}");
+        }
+
+        $response->assertStatus(429);
+    }
+
+    public function test_set_password_post_is_throttled()
+    {
+        for ($i = 0; $i < 11; $i++) {
+            $response = $this->post("/register/invite/tokenhere{$i}", [
+                'password' => 'my test password',
+            ]);
+        }
+
+        $response->assertStatus(429);
     }
 }

@@ -2,12 +2,12 @@
 
 namespace Tests\Auth;
 
-use BookStack\Auth\Access\LoginService;
-use BookStack\Auth\Access\Mfa\MfaValue;
-use BookStack\Auth\Access\Mfa\TotpService;
-use BookStack\Auth\Role;
-use BookStack\Auth\User;
+use BookStack\Access\LoginService;
+use BookStack\Access\Mfa\MfaValue;
+use BookStack\Access\Mfa\TotpService;
 use BookStack\Exceptions\StoppedAuthenticationException;
+use BookStack\Users\Models\Role;
+use BookStack\Users\Models\User;
 use Illuminate\Support\Facades\Hash;
 use PragmaRX\Google2FA\Google2FA;
 use Tests\TestCase;
@@ -55,6 +55,15 @@ class MfaVerificationTest extends TestCase
 
         $resp->assertSeeText('The provided code is not valid or has expired.');
         $this->assertNull(auth()->user());
+    }
+
+    public function test_totp_form_has_autofill_configured()
+    {
+        [$user, $secret, $loginResp] = $this->startTotpLogin();
+        $html = $this->withHtml($this->get('/mfa/verify'));
+
+        $html->assertElementExists('form[autocomplete="off"][action$="/verify"]');
+        $html->assertElementExists('input[autocomplete="one-time-code"][name="code"]');
     }
 
     public function test_backup_code_verification()
@@ -136,6 +145,15 @@ class MfaVerificationTest extends TestCase
         ]);
         $resp = $this->followRedirects($resp);
         $resp->assertSeeText('You have less than 5 backup codes remaining, Please generate and store a new set before you run out of codes to prevent being locked out of your account.');
+    }
+
+    public function test_backup_code_form_has_autofill_configured()
+    {
+        [$user, $codes, $loginResp] = $this->startBackupCodeLogin();
+        $html = $this->withHtml($this->get('/mfa/verify'));
+
+        $html->assertElementExists('form[autocomplete="off"][action$="/verify"]');
+        $html->assertElementExists('input[autocomplete="one-time-code"][name="code"]');
     }
 
     public function test_both_mfa_options_available_if_set_on_profile()

@@ -7,14 +7,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class DropEntityRestrictedField extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         // Remove entity-permissions on non-restricted entities
         $deleteInactiveEntityPermissions = function (string $table, string $morphClass) {
@@ -61,10 +59,8 @@ class DropEntityRestrictedField extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         // Create restricted columns
         $createRestrictedColumn = fn(Blueprint $table) => $table->boolean('restricted')->index()->default(0);
@@ -90,4 +86,4 @@ class DropEntityRestrictedField extends Migration
         // Delete default entity permissions
         DB::table('entity_permissions')->where('role_id', '=', 0)->delete();
     }
-}
+};

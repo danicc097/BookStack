@@ -3,15 +3,14 @@
 use BookStack\Uploads\Image;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
-class AddImageUploadTypes extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::table('images', function (Blueprint $table) {
             $table->string('path', 400);
@@ -27,14 +26,12 @@ class AddImageUploadTypes extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::table('images', function (Blueprint $table) {
             $table->dropColumn('type');
             $table->dropColumn('path');
         });
     }
-}
+};

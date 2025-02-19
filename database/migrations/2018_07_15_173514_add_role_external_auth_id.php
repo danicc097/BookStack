@@ -4,14 +4,12 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class AddRoleExternalAuthId extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::table('roles', function (Blueprint $table) {
             $table->string('external_auth_id', 180)->default('');
@@ -21,13 +19,11 @@ class AddRoleExternalAuthId extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::table('roles', function (Blueprint $table) {
             $table->dropColumn('external_auth_id');
         });
     }
-}
+};

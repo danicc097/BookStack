@@ -3,16 +3,15 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class AddApiAuth extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
 
         // Add API tokens table
@@ -42,10 +41,8 @@ class AddApiAuth extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         // Remove API tokens table
         Schema::dropIfExists('api_tokens');
@@ -57,4 +54,4 @@ class AddApiAuth extends Migration
         DB::table('permission_role')->where('permission_id', '=', $apiAccessPermission->id)->delete();
         DB::table('role_permissions')->where('name', '=', 'access-api')->delete();
     }
-}
+};

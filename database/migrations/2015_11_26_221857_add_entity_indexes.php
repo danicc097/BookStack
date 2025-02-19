@@ -2,15 +2,14 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
-class AddEntityIndexes extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::table('books', function (Blueprint $table) {
             $table->index('slug');
@@ -48,10 +47,8 @@ class AddEntityIndexes extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::table('books', function (Blueprint $table) {
             $table->dropIndex('books_slug_index');
@@ -86,4 +83,4 @@ class AddEntityIndexes extends Migration
             $table->dropIndex('views_viewable_id_index');
         });
     }
-}
+};

@@ -3,7 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-class UpdatePolymorphicTypes extends Migration
+return new class extends Migration
 {
     /**
      * Mapping of old polymorphic types to new simpler values.
@@ -32,10 +32,8 @@ class UpdatePolymorphicTypes extends Migration
 
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         foreach ($this->columnsByTable as $table => $column) {
             foreach ($this->changeMap as $oldVal => $newVal) {
@@ -48,10 +46,8 @@ class UpdatePolymorphicTypes extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         foreach ($this->columnsByTable as $table => $column) {
             foreach ($this->changeMap as $oldVal => $newVal) {
@@ -61,4 +57,4 @@ class UpdatePolymorphicTypes extends Migration
             }
         }
     }
-}
+};

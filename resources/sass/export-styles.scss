@@ -1,13 +1,11 @@
 @use "sass:math";
-@import "variables";
-@import "mixins";
-@import "html";
-@import "text";
-@import "layout";
-@import "blocks";
-@import "tables";
-@import "lists";
-@import "pages";
+
+@use "vars";
+@use "mixins";
+@use "html";
+@use "text";
+@use "tables";
+@use "content";
 
 html, body {
   background-color: #FFF;
@@ -33,7 +31,7 @@ table {
 pre {
   padding-left: 12px;
 }
-pre:after {
+pre:before {
   display: none;
 }
 pre code {

@@ -15,6 +15,7 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \BookStack\Http\Middleware\TrimStrings::class,
         \BookStack\Http\Middleware\TrustProxies::class,
+        \BookStack\Http\Middleware\PreventResponseCaching::class,
     ];
 
     /**
@@ -27,10 +28,9 @@ class Kernel extends HttpKernel
             \BookStack\Http\Middleware\ApplyCspRules::class,
             \BookStack\Http\Middleware\EncryptCookies::class,
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
-            \Illuminate\Session\Middleware\StartSession::class,
+            \BookStack\Http\Middleware\StartSessionExtended::class,
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \BookStack\Http\Middleware\VerifyCsrfToken::class,
-            \BookStack\Http\Middleware\PreventAuthenticatedResponseCaching::class,
             \BookStack\Http\Middleware\CheckEmailConfirmed::class,
             \BookStack\Http\Middleware\RunThemeActions::class,
             \BookStack\Http\Middleware\Localization::class,
@@ -40,17 +40,16 @@ class Kernel extends HttpKernel
             \BookStack\Http\Middleware\EncryptCookies::class,
             \BookStack\Http\Middleware\StartSessionIfCookieExists::class,
             \BookStack\Http\Middleware\ApiAuthenticate::class,
-            \BookStack\Http\Middleware\PreventAuthenticatedResponseCaching::class,
             \BookStack\Http\Middleware\CheckEmailConfirmed::class,
         ],
     ];
 
     /**
-     * The application's route middleware.
+     * The application's middleware aliases.
      *
      * @var array
      */
-    protected $routeMiddleware = [
+    protected $middlewareAliases = [
         'auth'       => \BookStack\Http\Middleware\Authenticate::class,
         'can'        => \BookStack\Http\Middleware\CheckUserHasPermission::class,
         'guest'      => \BookStack\Http\Middleware\RedirectIfAuthenticated::class,

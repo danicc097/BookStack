@@ -27,6 +27,10 @@ class PagesApiTest extends TestCase
                 'slug'     => $firstPage->slug,
                 'book_id'  => $firstPage->book->id,
                 'priority' => $firstPage->priority,
+                'owned_by'   => $firstPage->owned_by,
+                'created_by' => $firstPage->created_by,
+                'updated_by' => $firstPage->updated_by,
+                'revision_count' => $firstPage->revision_count,
             ],
         ]]);
     }
@@ -45,6 +49,7 @@ class PagesApiTest extends TestCase
                     'value' => 'tagvalue',
                 ],
             ],
+            'priority' => 15,
         ];
 
         $resp = $this->postJson($this->baseEndpoint, $details);
@@ -159,6 +164,41 @@ class PagesApiTest extends TestCase
         $this->assertStringContainsString('testing', $html);
     }
 
+    public function test_read_endpoint_provides_raw_html()
+    {
+        $html = "<p>testing</p><script>alert('danger')</script><h1>Hello</h1>";
+
+        $this->actingAsApiEditor();
+        $page = $this->entities->page();
+        $page->html = $html;
+        $page->save();
+
+        $resp = $this->getJson($this->baseEndpoint . "/{$page->id}");
+        $this->assertEquals($html, $resp->json('raw_html'));
+        $this->assertNotEquals($html, $resp->json('html'));
+    }
+
+    public function test_read_endpoint_returns_not_found()
+    {
+        $this->actingAsApiEditor();
+        // get an id that is not used
+        $id = Page::orderBy('id', 'desc')->first()->id + 1;
+        $this->assertNull(Page::find($id));
+
+        $resp = $this->getJson($this->baseEndpoint . "/$id");
+
+        $resp->assertNotFound();
+        $this->assertNull($resp->json('id'));
+        $resp->assertJsonIsObject('error');
+        $resp->assertJsonStructure([
+            'error' => [
+                'code',
+                'message',
+            ],
+        ]);
+        $this->assertSame(404, $resp->json('error')['code']);
+    }
+
     public function test_update_endpoint()
     {
         $this->actingAsApiEditor();
@@ -172,6 +212,7 @@ class PagesApiTest extends TestCase
                     'value' => 'freshtagval',
                 ],
             ],
+            'priority' => 15,
         ];
 
         $resp = $this->putJson($this->baseEndpoint . "/{$page->id}", $details);

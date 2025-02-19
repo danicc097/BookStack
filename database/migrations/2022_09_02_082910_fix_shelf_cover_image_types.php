@@ -3,14 +3,12 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-class FixShelfCoverImageTypes extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         // This updates the 'type' field for images, uploaded as shelf cover images,
         // to be cover_bookshelf instead of cover_book.
@@ -32,13 +30,11 @@ class FixShelfCoverImageTypes extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         DB::table('images')
             ->where('type', '=', 'cover_bookshelf')
             ->update(['type' => 'cover_book']);
     }
-}
+};

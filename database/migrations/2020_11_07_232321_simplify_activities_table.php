@@ -5,14 +5,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class SimplifyActivitiesTable extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::table('activities', function (Blueprint $table) {
             $table->renameColumn('key', 'type');
@@ -32,10 +30,8 @@ class SimplifyActivitiesTable extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         DB::table('activities')
             ->whereNull('entity_id')
@@ -55,4 +51,4 @@ class SimplifyActivitiesTable extends Migration
             $table->index('book_id');
         });
     }
-}
+};

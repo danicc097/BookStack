@@ -4,6 +4,7 @@ use Monolog\Formatter\LineFormatter;
 use Monolog\Handler\ErrorLogHandler;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
+use Monolog\Processor\PsrLogMessageProcessor;
 
 /**
  * Logging configuration options.
@@ -20,6 +21,15 @@ return [
     // messages to the logs. The name specified in this option should match
     // one of the channels defined in the "channels" configuration array.
     'default' => env('LOG_CHANNEL', 'single'),
+
+    // Deprecations Log Channel
+    // This option controls the log channel that should be used to log warnings
+    // regarding deprecated PHP and library features. This allows you to get
+    // your application ready for upcoming major versions of dependencies.
+    'deprecations' => [
+        'channel' => 'null',
+        'trace' => false,
+    ],
 
     // Log Channels
     // Here you may configure the log channels for your application. Out of
@@ -40,6 +50,7 @@ return [
             'path'   => storage_path('logs/laravel.log'),
             'level'  => 'debug',
             'days'   => 14,
+            'replace_placeholders' => true,
         ],
 
         'daily' => [
@@ -47,6 +58,7 @@ return [
             'path'   => storage_path('logs/laravel.log'),
             'level'  => 'debug',
             'days'   => 7,
+            'replace_placeholders' => true,
         ],
 
         'stderr' => [
@@ -56,16 +68,20 @@ return [
             'with'    => [
                 'stream' => 'php://stderr',
             ],
+            'processors' => [PsrLogMessageProcessor::class],
         ],
 
         'syslog' => [
             'driver' => 'syslog',
             'level'  => 'debug',
+            'facility' => LOG_USER,
+            'replace_placeholders' => true,
         ],
 
         'errorlog' => [
             'driver' => 'errorlog',
             'level'  => 'debug',
+            'replace_placeholders' => true,
         ],
 
         // Custom errorlog implementation that logs out a plain,
@@ -79,6 +95,7 @@ return [
             'formatter_with' => [
                 'format' => '%message%',
             ],
+            'replace_placeholders' => true,
         ],
 
         'null' => [

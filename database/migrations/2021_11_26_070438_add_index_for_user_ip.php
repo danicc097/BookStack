@@ -4,14 +4,12 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class AddIndexForUserIp extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::table('activities', function (Blueprint $table) {
             $table->index('ip', 'activities_ip_index');
@@ -20,13 +18,11 @@ class AddIndexForUserIp extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::table('activities', function (Blueprint $table) {
             $table->dropIndex('activities_ip_index');
         });
     }
-}
+};

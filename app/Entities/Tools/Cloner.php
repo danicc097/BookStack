@@ -2,7 +2,7 @@
 
 namespace BookStack\Entities\Tools;
 
-use BookStack\Actions\Tag;
+use BookStack\Activity\Models\Tag;
 use BookStack\Entities\Models\Book;
 use BookStack\Entities\Models\Bookshelf;
 use BookStack\Entities\Models\Chapter;
@@ -18,17 +18,12 @@ use Illuminate\Http\UploadedFile;
 
 class Cloner
 {
-    protected PageRepo $pageRepo;
-    protected ChapterRepo $chapterRepo;
-    protected BookRepo $bookRepo;
-    protected ImageService $imageService;
-
-    public function __construct(PageRepo $pageRepo, ChapterRepo $chapterRepo, BookRepo $bookRepo, ImageService $imageService)
-    {
-        $this->pageRepo = $pageRepo;
-        $this->chapterRepo = $chapterRepo;
-        $this->bookRepo = $bookRepo;
-        $this->imageService = $imageService;
+    public function __construct(
+        protected PageRepo $pageRepo,
+        protected ChapterRepo $chapterRepo,
+        protected BookRepo $bookRepo,
+        protected ImageService $imageService,
+    ) {
     }
 
     /**
@@ -77,7 +72,7 @@ class Cloner
         $copyBook = $this->bookRepo->create($bookDetails);
 
         // Clone contents
-        $directChildren = $original->getDirectChildren();
+        $directChildren = $original->getDirectVisibleChildren();
         foreach ($directChildren as $child) {
             if ($child instanceof Chapter && userCan('chapter-create', $copyBook)) {
                 $this->cloneChapter($child, $copyBook, $child->name);
